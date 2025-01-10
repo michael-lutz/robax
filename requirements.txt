@@ -1,0 +1,9 @@
+numpy
+jax[cuda12]
+flax
+einops
+tensorflow
+ml-collections
+pytest-snapshot
+pytest
+mypy

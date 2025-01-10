@@ -1,0 +1,10 @@
+*.DS_Store
+*.mypy_cache
+*.pytest_cache
+*.egg-info
+*.pyc
+
+checkpoints/
+wandb/
+scratch/
+build/
