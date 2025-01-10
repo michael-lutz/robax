@@ -21,19 +21,19 @@ However, the names of modules are made to match the old ones for easy loading.
 
 from typing import Any, Dict, Optional, Sequence, Union
 
-from absl import logging
 import flax
 import flax.linen as nn
 import flax.training.checkpoints
 import jax
 import jax.numpy as jnp
 import numpy as np
+import robax.utils.param_utils as u
 import scipy.ndimage
-from pi_zero_project.model.components.attention import MAPHead
-from pi_zero_project.model.vlm.img_model.base_img_model import BaseImageModel
-from pi_zero_project.model.components.pos_embed import get_posemb
-from pi_zero_project.model.components.mlp import MlpBlock
-import pi_zero_project.utils.param_utils as u
+from absl import logging
+from robax.model.components.attention import MAPHead
+from robax.model.components.mlp import MlpBlock
+from robax.model.components.pos_embed import get_posemb
+from robax.model.img_model.base_img_model import BaseImageModel
 
 
 class Encoder1DBlock(nn.Module):

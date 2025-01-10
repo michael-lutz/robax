@@ -1,7 +1,8 @@
 """Base Policy Class"""
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Tuple
+
 import jax
 
 

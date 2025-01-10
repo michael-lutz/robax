@@ -6,9 +6,9 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
-from pi_zero_project.model.components.einsum import Einsum
-from pi_zero_project.model.components.mlp import MlpBlock
-from pi_zero_project.model.components.pos_embed import apply_rope
+from robax.model.components.einsum import Einsum
+from robax.model.components.mlp import MlpBlock
+from robax.model.components.pos_embed import apply_rope
 
 
 def make_attn_mask(input_mask: jax.Array, mask_ar: jax.Array) -> jax.Array:

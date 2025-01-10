@@ -7,7 +7,7 @@ def get_model(config: Dict[str, Any]):
     """Barebones config-based model instantiation"""
 
     if config["model_name"] == "PiZero":
-        from pi_zero_project.model.policy.pi_zero import PiZero
+        from robax.model.policy.pi_zero import PiZero
 
         return PiZero(**config["model_arguments"])
     else:

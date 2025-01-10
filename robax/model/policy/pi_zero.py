@@ -1,43 +1,54 @@
-"""Combined Flow Matching and Autoregressive Action Prediction Policy
+"""Pi Zero Policy Implementation
 
-NOTE: to implement action chunking, predicts as follows:
-- Joint_1 Joint_2 Joint_3 ... Joint_1 Joint_2 Joint_3 ... Joint_1 ...
+There are many dimensions... For the reader's benefit:
+- B: batch size
+- I: number of input images
+- T: number of input tokens
+- A: number of actions to predict
+- L: overall sequence length (L = I + T + 1 + A)
+- D: hidden dimension
+- H: hidden dimension per head
 
-Works by performing attention with the following mask:
+- num_heads: number of attention heads
+- h_i, w_i: height and width of the image
+- p: number of proprioceptive features
+- a: size of action dimension
 
-    --gemma-- --action expert-- --gemma--
-    img + txt    prop  flow act  auto act
-    [i, i, t, t, p, p, a, a, a, r, r, r, ...]
 
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, ...]
-    [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, ...]
-    [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, ...]
+Essentially runs attention with the following mask:
+
+    --gemma-- --action expert--
+    img + txt    prop   act   ]
+    [i, i, t, t, p, p, a, a, a]
+
+    [1, 1, 1, 1, 0, 0, 0, 0, 0]
+    [1, 1, 1, 1, 0, 0, 0, 0, 0]
+    [1, 1, 1, 1, 0, 0, 0, 0, 0]
+    [1, 1, 1, 1, 0, 0, 0, 0, 0]
+    [1, 1, 1, 1, 1, 1, 0, 0, 0]
+    [1, 1, 1, 1, 1, 1, 0, 0, 0]
+    [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    [1, 1, 1, 1, 1, 1, 1, 1, 1]
 """
 
 from typing import List, Tuple
+
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
-from pi_zero_project.model.components.attention import make_attn_mask
-from pi_zero_project.model.components.moe_transformer_block import MoETransformerBlock
-from pi_zero_project.model.components.norms import RMSNorm
-from pi_zero_project.model.components.token_embed import Embedder
-from pi_zero_project.model.components.action_embedding import ActionEmbedder
-from pi_zero_project.model.vlm.img_model import vit
+from robax.model.components.action_embedding import ActionEmbedder
+from robax.model.components.attention import make_attn_mask
+from robax.model.components.moe_transformer_block import MoETransformerBlock
+from robax.model.components.norms import RMSNorm
+from robax.model.components.token_embed import Embedder
+from robax.model.img_model import vit
+from robax.training.objectives.flow_matching_action import sample_starting_noise
 
 
-class FlowAutoregressiveActionPrediction(nn.Module):
-    """Combined Flow Matching and Autoregressive Action Prediction Policy"""
+class PiZero(nn.Module):
+    """Pi_Zero Policy Implementation"""
 
     # Initialization parameters
     vit_variant: str
@@ -65,66 +76,44 @@ class FlowAutoregressiveActionPrediction(nn.Module):
     scan: bool = False
     remat_policy: str = "none"
 
-    def setup(self) -> None:
-        self.embedder = Embedder(
-            vocab_size=self.llm_vocab_size,
-            embed_dim=self.gemma_embed_dim,
-            name="text_embedder",
-        )
-
     @nn.compact
     def __call__(
         self,
         images: jax.Array,
         text: jax.Array,
         proprio: jax.Array,
-        flow_matching_action_chunk: jax.Array,
-        autoregressive_action_tokens: jax.Array,
+        action: jax.Array,
         timesteps: jax.Array,
         *,
         inference_mode: bool = False,
         deterministic: bool = True,
         return_intermediates: bool = False,
-    ) -> tuple[jax.Array, jax.Array, dict[str, jax.Array]]:
+    ) -> tuple[jax.Array, dict[str, jax.Array]]:
         """Primary call function for Pi_Zero
 
         Args:
             images: [B, I, h_i, w_i, 3] images
             text: [B, T] text tokens
             proprio: [B, P, p] proprioceptive features (P is assumed to be 1 in the paper)
-            flow_matching_action_chunk: [B, A, a] flow matching action chunk
-            autoregressive_action_tokens: [B, R] autoregressive action tokens. R for autoRegressive
+            action: [B, A, a] action to predict
             timesteps: [B] timesteps
             inference_mode: bool, whether to return the output of the policy
             return_intermediates: bool, whether to return the intermediate embeddings
         Returns:
             [B, A, a] output of the policy
         """
-        assert (
-            images.shape[0]
-            == text.shape[0]
-            == proprio.shape[0]
-            == flow_matching_action_chunk.shape[0]
-            == autoregressive_action_tokens.shape[0]
-        )
+        assert images.shape[0] == text.shape[0] == proprio.shape[0] == action.shape[0]
         assert len(images.shape) == 5, "images must be [B, I, h_i, w_i, 3]"
         assert len(text.shape) == 2, "text must be [B, T]"
         assert len(proprio.shape) == 3, "proprio must be [B, P, p]"
-        assert (
-            len(flow_matching_action_chunk.shape) == 3
-        ), "flow_matching_action_chunk must be [B, A, a]"
-        assert (
-            len(autoregressive_action_tokens.shape) == 2
-        ), "autoregressive_action_tokens must be [B, R]"
+        assert len(action.shape) == 3, "action must be [B, A, a]"
         assert len(timesteps.shape) == 1, "timesteps must be [B]"
 
         out = {}
 
         # Embed necessary inputs
-        action_token_embed = self.embed_action(flow_matching_action_chunk, timesteps)  # [B, A, D]
-        autoregressive_action_token_embed = self.embed_text(
-            autoregressive_action_tokens
-        )  # [B, R, D] NOTE: simpler if we reuse text model like OpenVLA
+        action_token_embed = self.embed_action(action, timesteps)  # [B, A, D]
+
         proprio_token_embed = self.embed_proprio(proprio)  # [B, P, D]
         text_token_embed = self.embed_text(text)  # [B, T, D]
         image_token_embed = self.embed_images(images)  # [B, I, D]
@@ -136,16 +125,13 @@ class FlowAutoregressiveActionPrediction(nn.Module):
             out["action_embeddings"] = action_token_embed
 
         # Create attention mask and blocks
-        attn_mask = self.make_attention_mask(
-            images, text, proprio, flow_matching_action_chunk, autoregressive_action_tokens
-        )  # [B, 1, L, L]
+        attn_mask = self.make_attention_mask(images, text, proprio, action)  # [B, 1, L, L]
         blocks = self.create_attention_blocks()
 
         # Run through attention blocks
         x = [
             ("gemma", jnp.concatenate([image_token_embed, text_token_embed], axis=1)),
             ("action_expert", jnp.concatenate([proprio_token_embed, action_token_embed], axis=1)),
-            ("gemma", autoregressive_action_token_embed),
         ]
 
         if return_intermediates:
@@ -167,15 +153,13 @@ class FlowAutoregressiveActionPrediction(nn.Module):
         if return_intermediates:
             out["final_normed_embeddings"] = x
 
-        action_field_embeddings = x[1][1][:, -flow_matching_action_chunk.shape[1] :, :]
-        action_field_pred = nn.Dense(
-            features=flow_matching_action_chunk.shape[2], name="proj_action_dim"
-        )(action_field_embeddings)
+        action_embeddings = x[-1][1][:, -action.shape[1] :, :]
+        action_field_pred = nn.Dense(features=action.shape[2], name="proj_action_dim")(
+            action_embeddings
+        )
+        # [B, A, a] result
 
-        autoreg_action_embeddings = x[2][1]
-        autoreg_action_tokens = self.embedder.decode(autoreg_action_embeddings)
-
-        return action_field_pred, autoreg_action_tokens, out
+        return action_field_pred, out
 
     def generate_action(
         self,
@@ -198,8 +182,18 @@ class FlowAutoregressiveActionPrediction(nn.Module):
         Returns:
             [B, A, a] action
         """
-        # TODO: maybe some combination of flow matching and autoregressive action prediction
-        pass
+        action = sample_starting_noise(prng, action_shape)
+        delta = 1 / num_steps
+        B = action.shape[0]
+
+        # basic integration of the action field
+        for i in range(num_steps):
+            tau = jnp.array(i / num_steps)
+            tau = jnp.tile(tau, (B,))
+
+            action_field_pred, _ = self(images, text, proprio, action, tau)
+            action += delta * action_field_pred
+        return action
 
     def embed_action(self, action: jax.Array, timesteps: jax.Array) -> jax.Array:
         """Embed the action into the action expert
@@ -266,59 +260,48 @@ class FlowAutoregressiveActionPrediction(nn.Module):
             [B, T, D] text embeddings
         """
         if text.shape[1] > 0:
-            text_token_embed = self.embedder.encode(text)  # [B, T, D]
+            embedder = Embedder(
+                vocab_size=self.llm_vocab_size,
+                embed_dim=self.gemma_embed_dim,
+                name="gemma_embedder",
+            )
+            text_token_embed = embedder.encode(text)  # [B, T, D]
         else:
             text_token_embed = jnp.zeros((text.shape[0], 0, self.gemma_embed_dim))
         return text_token_embed
 
     def make_attention_mask(
-        self,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        flow_matching_action_chunk: jax.Array,
-        autoregressive_action_tokens: jax.Array,
+        self, images: jax.Array, text: jax.Array, proprio: jax.Array, action: jax.Array
     ) -> jax.Array:
         """Make the attention mask for the Pi_Zero policy.
 
-        Creates a mask as follows:
-        img + txt    prop  flow act  auto act
-        [i, i, t, t, p, p, a, a, a, r, r, r, ...]
+        img + txt    prop   act   ]
+        [i, i, t, t, p, p, a, a, a]
 
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, ...]
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, ...]
-        [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, ...]
-
-        NOTE: during inference, would likely want to run the flow matching and autoregressive
-        prediction in entirely different processes.
+        [1, 1, 1, 1, 0, 0, 0, 0, 0]
+        [1, 1, 1, 1, 0, 0, 0, 0, 0]
+        [1, 1, 1, 1, 0, 0, 0, 0, 0]
+        [1, 1, 1, 1, 0, 0, 0, 0, 0]
+        [1, 1, 1, 1, 1, 1, 0, 0, 0]
+        [1, 1, 1, 1, 1, 1, 0, 0, 0]
+        [1, 1, 1, 1, 1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
         Args:
             images: [B, I, h_i, w_i, 3] images
             text: [B, T] text tokens
             proprio: [B, P, p] proprioceptive features (P is assumed to be 1 in the paper)
-            flow_matching_action_chunk: [B, A, a] flow matching action chunk
-            autoregressive_action_tokens: [B, R] autoregressive action tokens
+            action: [B, A, a] action to predict
 
         Returns:
             [B, 1, L, L] attention mask
         """
-
+        L = images.shape[1] + text.shape[1] + proprio.shape[1] + action.shape[1]
         B = images.shape[0]
         I = images.shape[1]
         T = text.shape[1]
         P = proprio.shape[1]
-        A = flow_matching_action_chunk.shape[1]
-        R = autoregressive_action_tokens.shape[1]
-        L = P + A + R + T + I
         input_mask = jnp.ones([B, L])
         # NOTE: if images are missing, assume the dataloader populated them with all 0
         img_mask = jnp.any(images, axis=(-3, -2, -1))
@@ -326,12 +309,7 @@ class FlowAutoregressiveActionPrediction(nn.Module):
         mask_ar = jnp.zeros([B, L])
         mask_ar = mask_ar.at[:, I + T].set(1)
         mask_ar = mask_ar.at[:, I + T + P].set(1)
-
-        # setting all autoregressive action tokens to 1
-        mask_ar = mask_ar.at[:, I + T + P + A :].set(1)
         attn_mask = make_attn_mask(input_mask, mask_ar)
-        # preventing autoregressive action tokens from attending to flow matching action chunk
-        attn_mask = attn_mask.at[:, I + T + P :, : I + T + P, : I + T + P + A].set(0)
         attn_mask = attn_mask[:, None, :, :]
         return attn_mask
 

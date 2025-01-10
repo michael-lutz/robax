@@ -6,9 +6,9 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
-from pi_zero_project.model.components.attention import Attention, apply_attention
-from pi_zero_project.model.components.mlp import FeedForward
-from pi_zero_project.model.components.norms import RMSNorm
+from robax.model.components.attention import Attention, apply_attention
+from robax.model.components.mlp import FeedForward
+from robax.model.components.norms import RMSNorm
 
 
 class MixtureSpec(TypedDict):

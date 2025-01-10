@@ -5,12 +5,13 @@ import os
 os.environ["JAX_PLATFORMS"] = "cpu"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-import pytest
-import jax
 import flax.linen as nn
+import jax
 import jax.numpy as jnp
-from pi_zero_project.model.vlm.img_model.vit import Model
+import pytest
 from pytest_snapshot.plugin import Snapshot
+
+from robax.model.img_model.vit import Model
 
 
 @pytest.fixture

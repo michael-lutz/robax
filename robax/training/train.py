@@ -7,10 +7,10 @@ import jax.numpy as jnp
 import optax
 import wandb
 
-from pi_zero_project.training.data_utils.jax_dataloader import NaiveDataLoader
-from pi_zero_project.training.data_utils.jax_lerobot_dataset import JaxLeRobotDataset
-from pi_zero_project.training.model_from_config import get_model
-from pi_zero_project.training.objectives.flow_matching_action import train_step
+from robax.training.data_utils.jax_dataloader import NaiveDataLoader
+from robax.training.data_utils.jax_lerobot_dataset import JaxLeRobotDataset
+from robax.training.model_from_config import get_model
+from robax.training.objectives.flow_matching_action import train_step
 
 checkpoint_dir = "../checkpoints/"
 
@@ -48,7 +48,7 @@ dataset = JaxLeRobotDataset("lerobot/pusht", delta_timestamps=delta_timestamps)
 dataloader = NaiveDataLoader(prng_key, dataset, batch_size=128)
 
 # Initialize wandb
-wandb.init(project="pi_zero_project", config=config)
+wandb.init(project="robax", config=config)
 
 
 model = get_model(config)

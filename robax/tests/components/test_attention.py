@@ -2,7 +2,7 @@
 
 import pytest
 import jax.numpy as jnp
-from pi_zero_project.model.components.attention import (
+from robax.model.components.attention import (
     make_attn_mask,
     apply_attention,
 )
