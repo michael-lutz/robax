@@ -36,11 +36,11 @@ class PiZeroBase(ABC):
         text: jax.Array,
         proprio: jax.Array,
         action: jax.Array,
-        timesteps: jax.Array,
         *,
         inference_mode: bool = False,
         deterministic: bool = True,
         return_intermediates: bool = False,
+        **bespoke_inputs: jax.Array,  # only for inputs, hyperparameters should be object vars
     ) -> Tuple[jax.Array, dict]:
         """Primary call function for the policy"""
         pass

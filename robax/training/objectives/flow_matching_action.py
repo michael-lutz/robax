@@ -1,10 +1,11 @@
 """Implements flow matching action loss and sampling utilities needed for training"""
 
 from typing import Any, Dict, Tuple
+
 import jax
 import jax.numpy as jnp
-import optax
-import flax.linen as nn
+
+from robax.training.objectives.base_train_step import BaseTrainStep
 
 
 def sample_starting_noise(prng: jax.Array, action_shape: Tuple[int, ...]) -> jax.Array:
@@ -51,55 +52,48 @@ def optimal_transport_vector_field(
     return target_action - starting_noise
 
 
-def flow_matching_action_loss(
-    predicted_field: jax.Array,
-    target_action: jax.Array,
-    starting_noise: jax.Array,
-) -> jax.Array:
-    """Computes the action loss for flow matching
+class FlowMatchingActionTrainStep(BaseTrainStep):
+    """Flow matching action train step."""
 
-    NOTE: we assume that the ground truth field is tau-independent.
-
-    Args:
-        predicted_field: The predicted action chunks [B, A, a]
-        target_action: The target action chunk [B, A, a]
-        starting_noise: The 0-th action, i.e. pure noise [B, A, a]
-    """
-    gt_vector_field = optimal_transport_vector_field(starting_noise, target_action)
-    mse_loss = jnp.mean(jnp.square(predicted_field - gt_vector_field))
-    return mse_loss
-
-
-def train_step(
-    prng_key: jax.Array,
-    params: Dict[str, Any],
-    opt_state: optax.OptState,
-    images: jax.Array,
-    text: jax.Array,
-    proprio: jax.Array,
-    action: jax.Array,
-    model: nn.Module,
-    optimizer: optax.GradientTransformation,
-) -> Tuple[jax.Array, Dict[str, Any], optax.OptState, jax.Array]:
-    assert action.shape[0] == images.shape[0] == text.shape[0] == proprio.shape[0]
-    timesteps = sample_tau(prng_key, (action.shape[0],))
-    prng_key, subkey = jax.random.split(prng_key)
-    starting_noise = sample_starting_noise(prng_key, action.shape)
-    prng_key, subkey = jax.random.split(prng_key)
-
-    def loss_fn(params):
-        predicted_field, _ = model.apply(
+    def get_loss(
+        self,
+        params: Dict[str, Any],
+        images: jax.Array,
+        text: jax.Array,
+        proprio: jax.Array,
+        action: jax.Array,
+        **additional_inputs: jax.Array
+    ) -> jax.Array:
+        """Computes the action loss for flow matching"""
+        predicted_field, _ = self.model.apply(
             params,
             images=images,
             text=text,
             proprio=proprio,
             action=action,
-            timesteps=timesteps,
+            timesteps=additional_inputs["timesteps"],
         )
-        loss = flow_matching_action_loss(predicted_field, action, starting_noise)
-        return loss
 
-    loss, grads = jax.value_and_grad(loss_fn)(params)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return prng_key, params, opt_state, loss
+        starting_noise: jax.Array = additional_inputs["starting_noise"]
+        gt_vector_field = optimal_transport_vector_field(starting_noise, action)
+        mse_loss = jnp.mean(jnp.square(predicted_field - gt_vector_field))
+        return mse_loss
+
+    def get_additional_inputs(
+        self,
+        prng_key: jax.Array,
+        images: jax.Array,
+        text: jax.Array,
+        proprio: jax.Array,
+        action: jax.Array,
+    ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
+        """Generates the additional inputs for the train step."""
+        timesteps = sample_tau(prng_key, (action.shape[0],))
+        prng_key, _ = jax.random.split(prng_key)
+        starting_noise = sample_starting_noise(prng_key, action.shape)
+        prng_key, _ = jax.random.split(prng_key)
+        training_inputs = {
+            "timesteps": timesteps,
+            "starting_noise": starting_noise,
+        }
+        return prng_key, training_inputs

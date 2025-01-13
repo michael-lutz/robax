@@ -1,11 +1,14 @@
 """Naive wrapper for the Lerobot dataset to make it compatible with JAX."""
 
+from typing import Dict
+
+import jax
 import jax.numpy as jnp
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
 
 class JaxLeRobotDataset(LeRobotDataset):
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Dict[str, jax.Array]:
         data = super().__getitem__(index)
         img = jnp.array(data["observation.image"]).transpose(0, 2, 3, 1)
         proprio = jnp.array(data["observation.state"])

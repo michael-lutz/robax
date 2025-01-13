@@ -6,6 +6,6 @@ setup(
     author="Michael Lutz",
     description="Robax is a Python package for training modern robotics models.",
     packages=["robax"],
-    python_requires=">=3.11",
+    python_requires=">=3.10",
     install_requires=open("requirements.txt").read().splitlines(),
 )
