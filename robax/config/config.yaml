@@ -1,0 +1,41 @@
+experiment_name: "flow_matching"
+project_name: "first_run"
+
+data:
+  repo_id: "lerobot/pusht"
+  delta_timestamps:
+    observation.image: [-0.1, 0.0]
+    observation.state: [-0.1, 0.0]
+    action: [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+  num_workers: 4
+  batch_size: 32
+
+training:
+  learning_rate: 0.0001
+  epochs: 10
+  log_every_n_steps: 1
+  save_every_n_steps: 10
+  checkpoint_dir: "~/checkpoints"
+
+objective:
+  name: "flow_matching"
+  args:
+    num_timesteps: 1000
+    cutoff_value: 0.999
+    beta_a: 1.5
+    beta_b: 1.0
+
+model:
+  name: "pi_zero"
+  args:
+    vit_variant: "S/16"
+    llm_vocab_size: 0
+    gemma_mlp_dim: 2048
+    gemma_embed_dim: 512
+    action_expert_mlp_dim: 1024
+    action_expert_embed_dim: 256
+    depth: 12
+    num_heads: 6
+    num_kv_heads: 1
+    head_dim: 64
+    dropout: 0.1

@@ -1,46 +1,37 @@
-"""Base training config.
+"""Base training config."""
 
-In my opinion, YAML configs are a pain to work with because it's unclear what the types are,
-implicit inheritance, and difficulty of debugging.
-
-This is a simple config class that allows for explicit inheritance and type checking.
-"""
-
-from typing import Callable, Dict, List
-
-import attrs
+from typing import Any, Dict, List, TypedDict
 
 
-@attrs.define
-class BaseDataConfig:
-    """Stores configuration for the dataset and dataloader initialization."""
-
-    # Relevant to the dataset
-    repo_id: str = attrs.field()
-    """Hugging Face repo ID."""
-    image_transforms: Callable = attrs.field(default=None)
-    """Image transforms to apply to the dataset."""
-    delta_timesteps: Dict[str, List[float]] = attrs.field(default=None)
-    """Delta timesteps to apply to the dataset."""
-
-    # Relevant to the dataloader
-    num_workers: int = attrs.field(default=4)
-    """Number of workers to use for loading the dataset."""
-    batch_size: int = attrs.field(default=32)
-    """Batch size to use for loading the dataset."""
+class DataConfig(TypedDict):
+    repo_id: str
+    delta_timestamps: Dict[str, List[float]]
+    num_workers: int
+    batch_size: int
 
 
-@attrs.define
-class BaseModelConfig:
-    """Stores configuration for model hyperparameters. Highly bespoke."""
+class TrainingConfig(TypedDict):
+    learning_rate: float  # TODO: add more optimizer hyperparameters
+    epochs: int
+    log_every_n_steps: int
+    save_every_n_steps: int
+    checkpoint_dir: str
 
-    model_name: str = attrs.field()
-    """Model name to be used in the training loop."""
+
+class ObjectiveConfig(TypedDict):
+    name: str
+    args: Dict[str, Any]  # bespoke to each objective
 
 
-@attrs.define
-class BaseTrainingConfig:
-    """Stores configuration for the training loop."""
+class ModelConfig(TypedDict):
+    name: str
+    args: Dict[str, Any]  # bespoke to each model
 
-    data: BaseDataConfig = attrs.field()
-    """Data config."""
+
+class Config(TypedDict):
+    experiment_name: str
+    project_name: str
+    data: DataConfig
+    training: TrainingConfig
+    objective: ObjectiveConfig
+    model: ModelConfig
