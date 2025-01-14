@@ -116,7 +116,14 @@ class BaseTrainStep(ABC):
         prng_key, additional_inputs = self.get_additional_inputs(
             prng_key, images, text, proprio, action
         )
-        params, opt_state, loss, grads = self.compute_new_params(
-            params, opt_state, images, text, proprio, action, **additional_inputs
-        )
+        if self.do_pmap:
+            params, opt_state, loss, grads = jax.pmap(
+                self.compute_new_params,
+                axis_name=self.pmap_axis_name,
+            )(params, opt_state, images, text, proprio, action, **additional_inputs)
+        else:
+            params, opt_state, loss, grads = self.compute_new_params(
+                params, opt_state, images, text, proprio, action, **additional_inputs
+            )
+
         return prng_key, params, opt_state, loss, grads

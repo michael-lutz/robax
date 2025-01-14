@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, Tuple
 
+import attrs
 import jax
 import jax.numpy as jnp
 
@@ -52,8 +53,16 @@ def optimal_transport_vector_field(
     return target_action - starting_noise
 
 
+@attrs.define(frozen=True)
 class FlowMatchingActionTrainStep(BaseTrainStep):
     """Flow matching action train step."""
+
+    cutoff_value: float = attrs.field(default=0.999)
+    """Cutoff value for the beta distribution."""
+    beta_a: float = attrs.field(default=1.5)
+    """Alpha parameter for the beta distribution."""
+    beta_b: float = attrs.field(default=1.0)
+    """Beta parameter for the beta distribution."""
 
     def get_loss(
         self,
