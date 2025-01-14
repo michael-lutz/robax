@@ -1,10 +1,26 @@
 """Naive dataloader for JAX."""
 
+from abc import ABC, abstractmethod
+
 import jax
 import jax.numpy as jnp
 
 
-class NaiveDataLoader:
+class BaseDataLoader(ABC):
+    """Base class for data loaders."""
+
+    @abstractmethod
+    def __iter__(self):
+        """Iterator for the data loader."""
+        pass
+
+    @abstractmethod
+    def __next__(self):
+        """Next item in the data loader."""
+        pass
+
+
+class NaiveDataLoader(BaseDataLoader):
     def __init__(self, prng_key, dataset, batch_size):
         self.prng_key = prng_key
         self.dataset = dataset

@@ -4,7 +4,7 @@ from typing import Dict
 
 import jax
 import jax.numpy as jnp
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset  # type: ignore
 
 
 class JaxLeRobotDataset(LeRobotDataset):
