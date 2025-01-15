@@ -208,8 +208,7 @@ class PiZero(BasePolicy):
         prng: jax.Array,
         observation: Observation,
         action_shape_to_generate: Tuple[int, ...],
-        *,
-        num_steps: int = 10,
+        **kwargs: Any,
     ) -> jax.Array:
         """Generate an action from the policy.
 
@@ -224,6 +223,7 @@ class PiZero(BasePolicy):
         Returns:
             [B, A, a] action
         """
+        num_steps = kwargs["num_steps"]
         noisy_action = sample_starting_noise(prng, action_shape_to_generate)
         delta = 1 / num_steps
         batch_size = action_shape_to_generate[0]
