@@ -1,12 +1,14 @@
 """Base Policy Class"""
 
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 import jax
 
+from robax.utils.observation import Observation
 
-class PiZeroBase(ABC):
+
+class BasePolicy(ABC):
     """Abstract Base Class for PiZero Policy"""
 
     @abstractmethod
@@ -32,16 +34,13 @@ class PiZeroBase(ABC):
     @abstractmethod
     def __call__(
         self,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action: jax.Array,
+        observation: Observation,
         *,
         inference_mode: bool = False,
         deterministic: bool = True,
         return_intermediates: bool = False,
-        **bespoke_inputs: jax.Array,  # only for inputs, hyperparameters should be object vars
-    ) -> Tuple[jax.Array, dict]:
+        **additional_inputs: jax.Array,  # only for inputs, hyperparameters should be object vars
+    ) -> Tuple[jax.Array, Dict[str, Any]]:
         """Primary call function for the policy"""
         pass
 
@@ -49,12 +48,10 @@ class PiZeroBase(ABC):
     def generate_action(
         self,
         prng: jax.Array,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action_shape: Tuple[int, ...],
+        observation: Observation,
+        action_shape_to_generate: Tuple[int, ...],
         *,
         num_steps: int = 10,
     ) -> jax.Array:
-        """Generate an action from the policy."""
+        """Generate an action from the policy. Note: should only return current action."""
         pass

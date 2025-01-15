@@ -32,7 +32,7 @@ Essentially runs attention with the following mask:
     [1, 1, 1, 1, 1, 1, 1, 1, 1]
 """
 
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import flax.linen as nn
 import jax
@@ -44,10 +44,12 @@ from robax.model.components.moe_transformer_block import MoETransformerBlock
 from robax.model.components.norms import RMSNorm
 from robax.model.components.token_embed import Embedder
 from robax.model.img_model import vit
+from robax.model.policy.base_policy import BasePolicy
 from robax.training.objectives.flow_matching_action import sample_starting_noise
+from robax.utils.observation import Observation
 
 
-class PiZero(nn.Module):
+class PiZero(BasePolicy):
     """Pi_Zero Policy Implementation"""
 
     # Initialization parameters
@@ -79,29 +81,37 @@ class PiZero(nn.Module):
     @nn.compact
     def __call__(
         self,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action: jax.Array,
-        timesteps: jax.Array,
+        observation: Observation,
         *,
         inference_mode: bool = False,
         deterministic: bool = True,
         return_intermediates: bool = False,
-    ) -> tuple[jax.Array, dict[str, jax.Array]]:
+        **additional_inputs: jax.Array,
+    ) -> Tuple[jax.Array, Dict[str, Any]]:
         """Primary call function for Pi_Zero
 
         Args:
-            images: [B, I, h_i, w_i, 3] images
-            text: [B, T] text tokens
-            proprio: [B, P, p] proprioceptive features (P is assumed to be 1 in the paper)
-            action: [B, A, a] action to predict
-            timesteps: [B] timesteps
+            observation: Observation
             inference_mode: bool, whether to return the output of the policy
+            deterministic: bool, whether to use deterministic operations
             return_intermediates: bool, whether to return the intermediate embeddings
+            **additional_inputs: jax.Array, additional inputs for the policy
+                - timesteps: [B] timesteps for flow matching
+                - noisy_action: [B, A, a] noisy action to use for flow matching
         Returns:
             [B, A, a] output of the policy
         """
+        assert "timesteps" in additional_inputs, "timesteps must be provided"
+        assert "noisy_action" in additional_inputs, "noisy_action must be provided"
+
+        timesteps = additional_inputs["timesteps"]
+        noisy_action = additional_inputs["noisy_action"]
+
+        images = observation["images"]
+        text = observation["text"]
+        proprio = observation["proprio"]
+        action = jnp.concatenate([observation["action"], noisy_action], axis=1)
+
         assert images.shape[0] == text.shape[0] == proprio.shape[0] == action.shape[0]
         assert len(images.shape) == 5, "images must be [B, I, h_i, w_i, 3]"
         assert len(text.shape) == 2, "text must be [B, T]"
@@ -109,7 +119,7 @@ class PiZero(nn.Module):
         assert len(action.shape) == 3, "action must be [B, A, a]"
         assert len(timesteps.shape) == 1, "timesteps must be [B]"
 
-        out = {}
+        out: Dict[str, Any] = {}
 
         # Embed necessary inputs
         action_token_embed = self.embed_action(action, timesteps)  # [B, A, D]
@@ -136,6 +146,7 @@ class PiZero(nn.Module):
 
         if return_intermediates:
             out["pre_attention"] = x
+
         for block in blocks:
             x = block(
                 x=x,
@@ -164,36 +175,40 @@ class PiZero(nn.Module):
     def generate_action(
         self,
         prng: jax.Array,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action_shape: Tuple[int, ...],
+        observation: Observation,
+        action_shape_to_generate: Tuple[int, ...],
         *,
         num_steps: int = 10,
     ) -> jax.Array:
         """Generate an action from the policy.
 
+        NOTE: observation["action"] here is assumed to only include action history. It does not
+        include noise, whereas `__call__` does.
+
         Args:
             prng: [B] PRNG key
-            images: [B, I, h_i, w_i, 3] images
-            text: [B, T] text tokens
-            proprio: [B, P, p] proprioceptive features (P is assumed to be 1 in the paper)
-            action_shape: [B, A, a] action shape
+            observation: Observation
+            action_shape_to_generate: [B, A, a] action shape
+            num_steps: int, number of steps to take
         Returns:
             [B, A, a] action
         """
-        action = sample_starting_noise(prng, action_shape)
+        noisy_action = sample_starting_noise(prng, action_shape_to_generate)
+        observation["action"] = jnp.concatenate([observation["action"], noisy_action], axis=1)
         delta = 1 / num_steps
-        B = action.shape[0]
+        batch_size = action_shape_to_generate[0]
+        actions_to_generate = action_shape_to_generate[1]
 
         # basic integration of the action field
         for i in range(num_steps):
             tau = jnp.array(i / num_steps)
-            tau = jnp.tile(tau, (B,))
+            tau = jnp.tile(tau, (batch_size,))
 
-            action_field_pred, _ = self(images, text, proprio, action, tau)
-            action += delta * action_field_pred
-        return action
+            action_field_pred, _ = self(observation, timesteps=tau, noisy_action=noisy_action)
+
+            noisy_action += delta * action_field_pred[:, -actions_to_generate:, :]
+
+        return noisy_action
 
     def embed_action(self, action: jax.Array, timesteps: jax.Array) -> jax.Array:
         """Embed the action into the action expert
@@ -248,6 +263,7 @@ class PiZero(nn.Module):
         del aux
         images = images.reshape(B, I, *images.shape[1:])
         image_token_embed = image_token_embed.reshape(B, I, self.gemma_embed_dim)
+        assert isinstance(image_token_embed, jax.Array)
         return image_token_embed
 
     def embed_text(self, text: jax.Array) -> jax.Array:
