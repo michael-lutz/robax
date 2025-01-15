@@ -40,7 +40,10 @@ import jax.numpy as jnp
 
 from robax.model.components.action_embedding import ActionEmbedder
 from robax.model.components.attention import make_attn_mask
-from robax.model.components.moe_transformer_block import MoETransformerBlock
+from robax.model.components.moe_transformer_block import (
+    MixtureSpec,
+    MoETransformerBlock,
+)
 from robax.model.components.norms import RMSNorm
 from robax.model.components.token_embed import Embedder
 from robax.model.img_model import vit
@@ -57,10 +60,8 @@ class PiZero(BasePolicy):
     llm_vocab_size: int
 
     # Attention parameters
-    gemma_mlp_dim: int
-    gemma_embed_dim: int
-    action_expert_mlp_dim: int
-    action_expert_embed_dim: int
+    mixture_specs: Dict[str, MixtureSpec]
+    input_expert_map: Dict[str, str]
     depth: int
     num_heads: int
     num_kv_heads: int
@@ -90,6 +91,14 @@ class PiZero(BasePolicy):
     ) -> Tuple[jax.Array, Dict[str, Any]]:
         """Primary call function for Pi_Zero
 
+        NOTE: ensure the observations have the following dimensions:
+        - images: [batch_size, num_images, height, width, 3]
+        - text: [batch_size, num_text_tokens]
+        - proprio: [batch_size, num_proprio_tokens, num_proprio_features]
+        - action: [batch_size, num_actions_conditioned, num_action_features]
+        - timesteps: [batch_size]
+        - noisy_action: [batch_size, num_actions_to_generate, num_action_features]
+
         Args:
             observation: Observation
             inference_mode: bool, whether to return the output of the policy
@@ -106,27 +115,37 @@ class PiZero(BasePolicy):
 
         timesteps = additional_inputs["timesteps"]
         noisy_action = additional_inputs["noisy_action"]
+        obs_images = observation["images"]
+        obs_text = observation["text"]
+        obs_proprio = observation["proprio"]
+        obs_action = observation["action"]
 
-        images = observation["images"]
-        text = observation["text"]
-        proprio = observation["proprio"]
-        action = jnp.concatenate([observation["action"], noisy_action], axis=1)
+        assert obs_proprio is not None or obs_images is not None, "proprio or images must exist"
 
-        assert images.shape[0] == text.shape[0] == proprio.shape[0] == action.shape[0]
-        assert len(images.shape) == 5, "images must be [B, I, h_i, w_i, 3]"
-        assert len(text.shape) == 2, "text must be [B, T]"
-        assert len(proprio.shape) == 3, "proprio must be [B, P, p]"
-        assert len(action.shape) == 3, "action must be [B, A, a]"
-        assert len(timesteps.shape) == 1, "timesteps must be [B]"
+        if obs_action is not None:
+            action = jnp.concatenate([obs_action, noisy_action], axis=1)
+        else:
+            action = noisy_action
 
         out: Dict[str, Any] = {}
 
         # Embed necessary inputs
         action_token_embed = self.embed_action(action, timesteps)  # [B, A, D]
 
-        proprio_token_embed = self.embed_proprio(proprio)  # [B, P, D]
-        text_token_embed = self.embed_text(text)  # [B, T, D]
-        image_token_embed = self.embed_images(images)  # [B, I, D]
+        if obs_proprio is not None:
+            proprio_token_embed = self.embed_proprio(obs_proprio)  # [B, P, D]
+        else:
+            proprio_token_embed = None
+
+        if obs_text is not None:
+            text_token_embed = self.embed_text(obs_text)  # [B, T, D]
+        else:
+            text_token_embed = None
+
+        if obs_images is not None:
+            image_token_embed = self.embed_images(obs_images)  # [B, I, D]
+        else:
+            image_token_embed = None
 
         if return_intermediates:
             out["image_embeddings"] = image_token_embed
@@ -135,14 +154,21 @@ class PiZero(BasePolicy):
             out["action_embeddings"] = action_token_embed
 
         # Create attention mask and blocks
-        attn_mask = self.make_attention_mask(images, text, proprio, action)  # [B, 1, L, L]
+        attn_mask = self.make_attention_mask(
+            obs_images, obs_text, obs_proprio, action
+        )  # [B, 1, L, L]
         blocks = self.create_attention_blocks()
 
         # Run through attention blocks
-        x = [
-            ("gemma", jnp.concatenate([image_token_embed, text_token_embed], axis=1)),
-            ("action_expert", jnp.concatenate([proprio_token_embed, action_token_embed], axis=1)),
-        ]
+        x = []
+        if image_token_embed is not None:
+            x.append((self.input_expert_map["images"], image_token_embed))
+        if text_token_embed is not None:
+            x.append((self.input_expert_map["text"], text_token_embed))
+        if proprio_token_embed is not None:
+            x.append((self.input_expert_map["proprio"], proprio_token_embed))
+        if action_token_embed is not None:
+            x.append((self.input_expert_map["action"], action_token_embed))
 
         if return_intermediates:
             out["pre_attention"] = x
@@ -158,8 +184,13 @@ class PiZero(BasePolicy):
         if return_intermediates:
             out["post_attention"] = x
 
+        final_norms = {
+            mixture_name: RMSNorm(name=f"{mixture_name}_final_norm")
+            for mixture_name in self.mixture_specs.keys()
+        }
+
         for i, (mixture_name, x_mixture) in enumerate(x):
-            x[i] = (mixture_name, RMSNorm(name=f"{mixture_name}_final_norm")(x_mixture))
+            x[i] = (mixture_name, final_norms[mixture_name](x_mixture))
 
         if return_intermediates:
             out["final_normed_embeddings"] = x
@@ -194,7 +225,6 @@ class PiZero(BasePolicy):
             [B, A, a] action
         """
         noisy_action = sample_starting_noise(prng, action_shape_to_generate)
-        observation["action"] = jnp.concatenate([observation["action"], noisy_action], axis=1)
         delta = 1 / num_steps
         batch_size = action_shape_to_generate[0]
         actions_to_generate = action_shape_to_generate[1]
@@ -220,9 +250,8 @@ class PiZero(BasePolicy):
         Returns:
             [B, A, D] action embeddings
         """
-        action_token_embed = ActionEmbedder(
-            embed_dim=self.action_expert_embed_dim, name="action_embedder"
-        )(
+        feature_size = self.mixture_specs[self.input_expert_map["action"]]["embed_dim"]
+        action_token_embed = ActionEmbedder(embed_dim=feature_size, name="action_embedder")(
             action, timesteps
         )  # [B, A, D]
         return action_token_embed
@@ -236,9 +265,8 @@ class PiZero(BasePolicy):
         Returns:
             [B, P, D] proprioceptive embeddings
         """
-        proprio_token_embed = nn.Dense(
-            features=self.action_expert_embed_dim, name="proprio_embedder"
-        )(
+        feature_size = self.mixture_specs[self.input_expert_map["proprio"]]["embed_dim"]
+        proprio_token_embed = nn.Dense(features=feature_size, name="proprio_embedder")(
             proprio
         )  # [B, P, D]
         return proprio_token_embed
@@ -255,14 +283,13 @@ class PiZero(BasePolicy):
         B, I = images.shape[:2]
         images = images.reshape(B * I, *images.shape[2:])
         vit_config = vit.decode_variant(self.vit_variant)
-        image_token_embed, aux = vit.ViT(
-            num_classes=self.gemma_embed_dim, name="img", **vit_config
-        )(
+        embed_dim = self.mixture_specs[self.input_expert_map["images"]]["embed_dim"]
+        image_token_embed, aux = vit.ViT(num_classes=embed_dim, name="img", **vit_config)(
             images
         )  # [B * I, D]
         del aux
         images = images.reshape(B, I, *images.shape[1:])
-        image_token_embed = image_token_embed.reshape(B, I, self.gemma_embed_dim)
+        image_token_embed = image_token_embed.reshape(B, I, embed_dim)
         assert isinstance(image_token_embed, jax.Array)
         return image_token_embed
 
@@ -275,19 +302,24 @@ class PiZero(BasePolicy):
         Returns:
             [B, T, D] text embeddings
         """
+        embed_dim = self.mixture_specs[self.input_expert_map["text"]]["embed_dim"]
         if text.shape[1] > 0:
             embedder = Embedder(
                 vocab_size=self.llm_vocab_size,
-                embed_dim=self.gemma_embed_dim,
+                embed_dim=embed_dim,
                 name="gemma_embedder",
             )
             text_token_embed = embedder.encode(text)  # [B, T, D]
         else:
-            text_token_embed = jnp.zeros((text.shape[0], 0, self.gemma_embed_dim))
+            text_token_embed = jnp.zeros((text.shape[0], 0, embed_dim))
         return text_token_embed
 
     def make_attention_mask(
-        self, images: jax.Array, text: jax.Array, proprio: jax.Array, action: jax.Array
+        self,
+        images: jax.Array | None,
+        text: jax.Array | None,
+        proprio: jax.Array | None,
+        action: jax.Array,
     ) -> jax.Array:
         """Make the attention mask for the Pi_Zero policy.
 
@@ -313,15 +345,17 @@ class PiZero(BasePolicy):
         Returns:
             [B, 1, L, L] attention mask
         """
-        L = images.shape[1] + text.shape[1] + proprio.shape[1] + action.shape[1]
-        B = images.shape[0]
-        I = images.shape[1]
-        T = text.shape[1]
-        P = proprio.shape[1]
+        B = action.shape[0]
+        A = action.shape[1]
+        I = images.shape[1] if images is not None else 0
+        T = text.shape[1] if text is not None else 0
+        P = proprio.shape[1] if proprio is not None else 0
+        L = I + T + P + A
         input_mask = jnp.ones([B, L])
         # NOTE: if images are missing, assume the dataloader populated them with all 0
-        img_mask = jnp.any(images, axis=(-3, -2, -1))
-        input_mask = input_mask.at[:, :I].set(input_mask[:, :I] * img_mask)
+        if images is not None:
+            img_mask = jnp.any(images, axis=(-3, -2, -1))
+            input_mask = input_mask.at[:, :I].set(input_mask[:, :I] * img_mask)
         mask_ar = jnp.zeros([B, L])
         mask_ar = mask_ar.at[:, I + T].set(1)
         mask_ar = mask_ar.at[:, I + T + P].set(1)
@@ -346,14 +380,7 @@ class PiZero(BasePolicy):
             )
 
         block_kw = dict(
-            mixture_specs=[
-                {"name": "gemma", "mlp_dim": self.gemma_mlp_dim, "embed_dim": self.gemma_embed_dim},
-                {
-                    "name": "action_expert",
-                    "mlp_dim": self.action_expert_mlp_dim,
-                    "embed_dim": self.action_expert_embed_dim,
-                },
-            ],
+            mixture_specs=self.mixture_specs,
             num_heads=self.num_heads,
             num_kv_heads=self.num_kv_heads,
             head_dim=self.head_dim,

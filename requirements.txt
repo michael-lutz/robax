@@ -7,3 +7,4 @@ ml-collections
 pytest-snapshot
 pytest
 mypy
+gym-pusht

@@ -1,10 +1,10 @@
 """Mixture of Experts Attention Block Implementation, following pi_zero implementation"""
 
-from typing import List, Tuple, TypedDict
+from typing import Dict, List, Tuple, TypedDict
 
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
 from robax.model.components.attention import Attention, apply_attention
 from robax.model.components.mlp import FeedForward
@@ -14,7 +14,6 @@ from robax.model.components.norms import RMSNorm
 class MixtureSpec(TypedDict):
     """Specification for a mixture of experts."""
 
-    name: str
     mlp_dim: int
     embed_dim: int
 
@@ -23,8 +22,7 @@ class MoETransformerBlock(nn.Module):
     """Mixture of Experts Transformer block.
 
     Attributes:
-        mixture_specs: List of dictionaries containing specifications for each mixture.
-                       Each dictionary should have keys: 'name', 'mlp_dim', 'embed_dim'.
+        mixture_specs: Dictionary of specifications for each mixture's 'mlp_dim', 'embed_dim'.
         num_heads: number of attention heads
         num_kv_heads: number of key/value heads
         head_dim: dimension of each attention head
@@ -36,7 +34,7 @@ class MoETransformerBlock(nn.Module):
         cache_dtype: data type for cache
     """
 
-    mixture_specs: List[MixtureSpec]
+    mixture_specs: Dict[str, MixtureSpec]
     num_heads: int
     num_kv_heads: int
     head_dim: int
@@ -49,12 +47,11 @@ class MoETransformerBlock(nn.Module):
 
     def setup(self) -> None:
         self.pre_attention_norms = {
-            spec["name"]: RMSNorm(name=f"{spec['name']}_pre_attn_norm")
-            for spec in self.mixture_specs
+            name: RMSNorm(name=f"{name}_pre_attn_norm") for name in self.mixture_specs
         }
 
         self.attentions = {
-            spec["name"]: Attention(
+            name: Attention(
                 num_heads=self.num_heads,
                 num_kv_heads=self.num_kv_heads,
                 features=spec["embed_dim"],
@@ -62,18 +59,17 @@ class MoETransformerBlock(nn.Module):
                 cache_dtype=self.cache_dtype,
                 query_pre_attn_norm=self.query_pre_attn_norm,
                 attn_logits_softcap=self.attn_logits_softcap,
-                name=f"{spec['name']}_attn",
+                name=f"{name}_attn",
             )
-            for spec in self.mixture_specs
+            for name, spec in self.mixture_specs.items()
         }
 
         self.pre_ffw_norms = {
-            spec["name"]: RMSNorm(name=f"{spec['name']}_pre_ffw_norm")
-            for spec in self.mixture_specs
+            name: RMSNorm(name=f"{name}_pre_ffw_norm") for name in self.mixture_specs
         }
         self.mlps = {
-            spec["name"]: FeedForward(features=spec["embed_dim"], hidden_dim=spec["mlp_dim"])
-            for spec in self.mixture_specs
+            name: FeedForward(features=spec["embed_dim"], hidden_dim=spec["mlp_dim"])
+            for name, spec in self.mixture_specs.items()
         }
 
         if self.dropout:
@@ -82,12 +78,10 @@ class MoETransformerBlock(nn.Module):
             self.drop = lambda x, _: x
         if self.post_norms:
             self.post_attention_norms = {
-                spec["name"]: RMSNorm(name=f"{spec['name']}_post_attn_norm")
-                for spec in self.mixture_specs
+                name: RMSNorm(name=f"{name}_post_attn_norm") for name in self.mixture_specs
             }
             self.post_ffw_norms = {
-                spec["name"]: RMSNorm(name=f"{spec['name']}_post_ffw_norm")
-                for spec in self.mixture_specs
+                name: RMSNorm(name=f"{name}_post_ffw_norm") for name in self.mixture_specs
             }
 
     def _process_attention_output(

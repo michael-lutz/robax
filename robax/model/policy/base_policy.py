@@ -3,12 +3,13 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Tuple
 
+import flax.linen as nn
 import jax
 
 from robax.utils.observation import Observation
 
 
-class BasePolicy(ABC):
+class BasePolicy(ABC, nn.Module):
     """Abstract Base Class for PiZero Policy"""
 
     @abstractmethod

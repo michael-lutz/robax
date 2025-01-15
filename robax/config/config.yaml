@@ -30,10 +30,18 @@ model:
   args:
     vit_variant: "S/16"
     llm_vocab_size: 0
-    gemma_mlp_dim: 2048
-    gemma_embed_dim: 512
-    action_expert_mlp_dim: 1024
-    action_expert_embed_dim: 256
+    mixture_specs:
+      gemma:
+        embed_dim: 512
+        mlp_dim: 2048
+      action_expert:
+        embed_dim: 256
+        mlp_dim: 1024
+    input_expert_map:
+      images: "gemma"
+      text: "gemma"
+      proprio: "action_expert"
+      action: "action_expert"
     depth: 12
     num_heads: 6
     num_kv_heads: 1
