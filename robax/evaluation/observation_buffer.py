@@ -1,7 +1,7 @@
 """Basic FIFO buffer for storing observations during evaluation."""
 
 from collections import deque
-from typing import Deque, Dict, List
+from typing import Deque, Dict
 
 import jax.numpy as jnp
 
@@ -14,18 +14,18 @@ class ObservationBuffer:
     TODO: For environments with variance in timestamps / observation frequency, use timestamp logic.
     """
 
-    def __init__(self, delta_timestamps: Dict[str, List[float]], horizon_dim: int = 1):
+    def __init__(self, observation_sizes: Dict[str, int], horizon_dim: int = 1):
         """Initialize the observation buffer.
 
         Args:
-            delta_timestamps: A dictionary of observation sizes.
+            observation_sizes: A dictionary of observation sizes.
             horizon_dim: The observation or action horizon/history dimension. Should be consistent.
         """
-        self.observation_sizes = {
-            key: len(timestamps) for key, timestamps in delta_timestamps.items()
-        }
+        self.observation_sizes = observation_sizes
         self.buffers: Dict[str, Deque[jnp.ndarray]] = {
-            key: deque(maxlen=self.observation_sizes[key]) for key in self.observation_sizes
+            obs_name: deque(maxlen=obs_size)
+            for obs_name, obs_size in self.observation_sizes.items()
+            if obs_size is not None
         }
         self.horizon_dim = horizon_dim
 
@@ -36,7 +36,8 @@ class ObservationBuffer:
             observation: A dictionary of observations.
         """
         for key, value in observation.items():
-            self.buffers[key].append(value)
+            if key in self.buffers and value is not None:
+                self.buffers[key].append(value)
 
     def get_observation(self) -> Observation:
         """Get the observation history as a JAX array, padded with the oldest data if necessary.

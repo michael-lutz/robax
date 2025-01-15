@@ -59,6 +59,9 @@ class PiZero(BasePolicy):
     vit_variant: str
     llm_vocab_size: int
 
+    # Broader training
+    unbatched_prediction_shape: Tuple[int, int]  # NOTE: this is unbatched...
+
     # Attention parameters
     mixture_specs: Dict[str, MixtureSpec]
     input_expert_map: Dict[str, str]
@@ -66,17 +69,15 @@ class PiZero(BasePolicy):
     num_heads: int
     num_kv_heads: int
     head_dim: int
-
     query_pre_attn_norm: str = "rsqrt_head_dim"
     attn_logits_softcap: float = 0.0
     post_norms: bool = False
-
     dropout: float = 0.0
     dropout_bdims: tuple[int, ...] = ()
-    cache_dtype: str | None = None
-
-    embed_dtype: str = "float32"
     scan: bool = False
+
+    cache_dtype: str | None = None
+    embed_dtype: str = "float32"
     remat_policy: str = "none"
 
     @nn.compact
@@ -195,10 +196,10 @@ class PiZero(BasePolicy):
         if return_intermediates:
             out["final_normed_embeddings"] = x
 
-        action_embeddings = x[-1][1][:, -action.shape[1] :, :]
-        action_field_pred = nn.Dense(features=action.shape[2], name="proj_action_dim")(
-            action_embeddings
-        )
+        action_embeddings = x[-1][1][:, -self.unbatched_prediction_shape[0] :, :]
+        action_field_pred = nn.Dense(
+            features=self.unbatched_prediction_shape[1], name="proj_action_dim"
+        )(action_embeddings)
         # [B, A, a] result
 
         return action_field_pred, out
@@ -207,9 +208,8 @@ class PiZero(BasePolicy):
         self,
         prng: jax.Array,
         observation: Observation,
-        action_shape_to_generate: Tuple[int, ...],
         **kwargs: Any,
-    ) -> jax.Array:
+    ) -> Tuple[jax.Array, jax.Array]:
         """Generate an action from the policy.
 
         NOTE: observation["action"] here is assumed to only include action history. It does not
@@ -218,27 +218,31 @@ class PiZero(BasePolicy):
         Args:
             prng: [B] PRNG key
             observation: Observation
-            action_shape_to_generate: [B, A, a] action shape
             num_steps: int, number of steps to take
         Returns:
+            prng
             [B, A, a] action
         """
+        action = observation["action"]
+        assert action is not None
+
         num_steps = kwargs["num_steps"]
-        noisy_action = sample_starting_noise(prng, action_shape_to_generate)
+        noisy_action = sample_starting_noise(
+            prng, (action.shape[0], self.unbatched_prediction_shape[0], action.shape[2])
+        )
+        prng, _ = jax.random.split(prng)
         delta = 1 / num_steps
-        batch_size = action_shape_to_generate[0]
-        actions_to_generate = action_shape_to_generate[1]
 
         # basic integration of the action field
         for i in range(num_steps):
             tau = jnp.array(i / num_steps)
-            tau = jnp.tile(tau, (batch_size,))
+            tau = jnp.tile(tau, (action.shape[0],))
 
             action_field_pred, _ = self(observation, timesteps=tau, noisy_action=noisy_action)
 
-            noisy_action += delta * action_field_pred[:, -actions_to_generate:, :]
+            noisy_action += delta * action_field_pred[:, :, :]
 
-        return noisy_action
+        return prng, noisy_action
 
     def embed_action(self, action: jax.Array, timesteps: jax.Array) -> jax.Array:
         """Embed the action into the action expert

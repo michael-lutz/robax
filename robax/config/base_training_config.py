@@ -4,7 +4,14 @@ from typing import Any, Dict, List, TypedDict
 
 
 class DataConfig(TypedDict):
-    repo_id: str
+    dataset_id: str
+    proprio_length: int
+    action_history_length: int
+    action_target_length: int
+    action_feature_size: int
+    proprio_feature_size: int
+    image_length: int
+    text_length: int
     delta_timestamps: Dict[str, List[float]]
     num_workers: int
     batch_size: int
@@ -15,7 +22,7 @@ class TrainingConfig(TypedDict):
     epochs: int
     log_every_n_steps: int
     save_every_n_steps: int
-    checkpoint_dir: str
+    seed: int
 
 
 class ObjectiveConfig(TypedDict):

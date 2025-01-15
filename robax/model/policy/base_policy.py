@@ -50,8 +50,7 @@ class BasePolicy(ABC, nn.Module):
         self,
         prng: jax.Array,
         observation: Observation,
-        action_shape_to_generate: Tuple[int, ...],
         **kwargs: Any,
-    ) -> jax.Array:
-        """Generate an action from the policy. Note: should only return current action."""
+    ) -> Tuple[jax.Array, jax.Array]:
+        """Generate an action from the policy. Returns prng key and current step action."""
         pass

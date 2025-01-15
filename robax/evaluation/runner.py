@@ -7,12 +7,14 @@ import jax
 import jax.numpy as jnp
 
 from robax.evaluation.observation_buffer import ObservationBuffer
+from robax.model.policy.base_policy import BasePolicy
+from robax.utils.observation import Observation
 
 
 def batch_rollout(
     prng: jax.Array,
-    params: Any,
-    model: Any,
+    params: Dict[str, Any],
+    model: BasePolicy,
     env: gym.vector.VectorEnv,
     delta_timestamps: Dict[str, List[float]],
     episode_length: int,
@@ -36,8 +38,10 @@ def batch_rollout(
     """
 
     @jax.jit
-    def jitted_generate_action(prng, params, observation):
-        return model.apply(
+    def jitted_generate_action(
+        prng: jax.Array, params: Dict[str, Any], observation: Observation
+    ) -> Tuple[jax.Array, jax.Array]:
+        prng_key, action = model.apply(
             prng=prng,
             params=params,
             observation=observation,
@@ -45,6 +49,8 @@ def batch_rollout(
             action_shape_to_generate=action_shape_to_generate,
             **generate_action_kwargs,
         )
+        assert isinstance(action, jax.Array)
+        return prng_key, action
 
     observation_buffer = ObservationBuffer(
         delta_timestamps=delta_timestamps,

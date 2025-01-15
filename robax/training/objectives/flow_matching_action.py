@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from robax.training.objectives.base_train_step import BaseTrainStep
+from robax.utils.observation import Observation, get_batch_size
 
 
 def sample_starting_noise(prng: jax.Array, action_shape: Tuple[int, ...]) -> jax.Array:
@@ -53,6 +54,24 @@ def optimal_transport_vector_field(
     return target_action - starting_noise
 
 
+def interpolate_noise_and_target(
+    starting_noise: jax.Array, target_action: jax.Array, timesteps: jax.Array
+) -> jax.Array:
+    """Interpolates the noise and target action at the given timesteps
+
+    Args:
+        starting_noise: The 0-th action, i.e. pure noise [B, A, a]
+        target_action: The target action vector field [B, A, a]
+        timesteps: The timesteps to interpolate at [B]
+
+    Returns:
+        The interpolated action vector field [B, A, a]
+    """
+    # Reshape timesteps to [B, 1, 1] to enable broadcasting
+    timesteps = timesteps[:, None, None]
+    return starting_noise + (target_action - starting_noise) * timesteps
+
+
 @attrs.define(frozen=True)
 class FlowMatchingActionTrainStep(BaseTrainStep):
     """Flow matching action train step."""
@@ -67,39 +86,38 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
     def get_loss(
         self,
         params: Dict[str, Any],
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action: jax.Array,
+        observation: Observation,
+        target: jax.Array,
         **additional_inputs: jax.Array
     ) -> jax.Array:
         """Computes the action loss for flow matching"""
+        starting_noise: jax.Array = additional_inputs["starting_noise"]
+        timesteps: jax.Array = additional_inputs["timesteps"]
+        interpolated_action = interpolate_noise_and_target(starting_noise, target, timesteps)
+
         predicted_field, _ = self.model.apply(
             params,
-            images=images,
-            text=text,
-            proprio=proprio,
-            action=action,
-            timesteps=additional_inputs["timesteps"],
+            observation=observation,
+            noisy_action=interpolated_action,
+            timesteps=timesteps,
         )
 
-        starting_noise: jax.Array = additional_inputs["starting_noise"]
-        gt_vector_field = optimal_transport_vector_field(starting_noise, action)
+        gt_vector_field = optimal_transport_vector_field(starting_noise, target)
         mse_loss = jnp.mean(jnp.square(predicted_field - gt_vector_field))
         return mse_loss
 
     def get_additional_inputs(
         self,
         prng_key: jax.Array,
-        images: jax.Array,
-        text: jax.Array,
-        proprio: jax.Array,
-        action: jax.Array,
+        observation: Observation,
     ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """Generates the additional inputs for the train step."""
-        timesteps = sample_tau(prng_key, (action.shape[0],))
+        batch_size = get_batch_size(observation)
+        timesteps = sample_tau(prng_key, (batch_size,))
         prng_key, _ = jax.random.split(prng_key)
-        starting_noise = sample_starting_noise(prng_key, action.shape)
+        starting_noise = sample_starting_noise(
+            prng_key, (batch_size, *self.unbatched_prediction_shape)
+        )
         prng_key, _ = jax.random.split(prng_key)
         training_inputs = {
             "timesteps": timesteps,
