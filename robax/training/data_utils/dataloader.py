@@ -1,10 +1,10 @@
 import math
-import warnings
 from functools import partial
 from multiprocessing import Pool
 from typing import Any, Callable, Dict, Iterator, List
 
 import jax.numpy as jnp
+import jax.random
 import numpy as np
 from datasets import Dataset, DatasetDict, load_dataset  # type: ignore
 from numpy.typing import NDArray
@@ -175,7 +175,7 @@ def aggregate_horizons(horizons: List[Dict[str, jnp.ndarray]]) -> Observation:
     for key in keys:
         batched_dict[key] = jnp.stack([convert_to_jnp(h[key]) for h in horizons])
 
-    return observation_from_dict(batched_dict)
+    return observation_from_dict(batched_dict)  # type: ignore
 
 
 class DataLoader:
@@ -238,16 +238,15 @@ class DataLoader:
             self.delta_timestamps[feature_name] = np.array(offsets)
 
         self.num_rows = len(self.dataset)
-        self.all_indices = np.arange(self.num_rows)
+        self.all_indices = jnp.arange(self.num_rows)
         self.randomize(prng_key)
 
         self.iter_ptr = 0
 
     def randomize(self, prng_key: jnp.ndarray) -> None:
         """Randomize the dataset indices."""
-        self.prng_key = prng_key
         if self.shuffle:
-            np.random.shuffle(self.all_indices)
+            self.all_indices = jax.random.permutation(prng_key, self.all_indices)
 
     def __len__(self) -> int:
         """Number of batches per 'epoch' if we consume all indices once."""

@@ -59,6 +59,9 @@ def initialize_training(
         shuffle=True,
         transform=from_state_and_env_state,  # TODO: create way to specify in config...
     )
+    import pdb
+
+    pdb.set_trace()
     unbatched_prediction_shape = (
         config["data"]["action_target_length"],
         config["data"]["action_feature_size"],
