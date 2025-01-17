@@ -121,12 +121,7 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
     train_step = get_objective(config["objective"])
 
     # splitting action into historical and target
-    try:
-        action_timesteps = np.array(config["data"]["delta_timestamps"]["action"])
-        action_split_idx = np.where(action_timesteps == 0.0)[0][0]
-    except:
-        raise ValueError("0.0 must be in delta_timestamps in the action key")
-    assert action_split_idx == config["data"]["action_history_length"]
+    action_split_idx = config["data"]["action_history_length"]
 
     for epoch in range(config["training"]["epochs"]):
         dataloader.randomize(prng_key)
