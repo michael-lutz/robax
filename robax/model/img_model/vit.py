@@ -27,10 +27,12 @@ import flax.training.checkpoints
 import jax
 import jax.numpy as jnp
 import numpy as np
-import robax.utils.param_utils as u
 import scipy.ndimage
 from absl import logging
+
+import robax.utils.param_utils as u
 from robax.model.components.attention import MAPHead
+from robax.model.components.default import BATCH_AXIS, EMBEDDING_AXIS, LENGTH_AXIS
 from robax.model.components.mlp import MlpBlock
 from robax.model.components.pos_embed import get_posemb
 from robax.model.img_model.base_img_model import BaseImageModel
@@ -47,7 +49,7 @@ class Encoder1DBlock(nn.Module):
     @nn.compact
     def __call__(self, x, deterministic=True):
         out = {}
-        x = nn.with_logical_constraint(x, ("act_batch", "act_len", "act_emb"))  # type: ignore
+        x = nn.with_logical_constraint(x, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         y = nn.LayerNorm()(x)
         y = out["sa"] = nn.MultiHeadDotProductAttention(
             num_heads=self.num_heads,
@@ -55,7 +57,7 @@ class Encoder1DBlock(nn.Module):
             deterministic=deterministic,
             dtype=self.dtype_mm,
         )(y, y)
-        y = nn.with_logical_constraint(y, ("act_batch", "act_len", "act_emb"))  # type: ignore
+        y = nn.with_logical_constraint(y, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         y = nn.Dropout(rate=self.dropout)(y, deterministic)
         x = out["+sa"] = x + y
 
@@ -65,10 +67,10 @@ class Encoder1DBlock(nn.Module):
             dropout=self.dropout,
             dtype_mm=self.dtype_mm,
         )(y, deterministic)
-        y = nn.with_logical_constraint(y, ("act_batch", "act_len", "act_emb"))  # type: ignore
+        y = nn.with_logical_constraint(y, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         y = nn.Dropout(rate=self.dropout)(y, deterministic)
         x = out["+mlp"] = x + y
-        x = nn.with_logical_constraint(x, ("act_batch", "act_len", "act_emb"))  # type: ignore
+        x = nn.with_logical_constraint(x, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         return x, out
 
 
@@ -238,7 +240,7 @@ class ViT(nn.Module, BaseImageModel):
 
 def Model(num_classes=None, *, variant=None, **kw):  # pylint: disable=invalid-name
     """Factory function"""
-    return ViT(num_classes, **{**decode_variant(variant), **kw})
+    return ViT(num_classes, **{**decode_variant(variant), **kw})  # type: ignore
 
 
 def decode_variant(variant: str) -> Dict[str, Any]:

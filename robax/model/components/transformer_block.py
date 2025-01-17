@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from robax.model.components.attention import Attention
+from robax.model.components.default import BATCH_AXIS, EMBEDDING_AXIS, LENGTH_AXIS
 from robax.model.components.mlp import FeedForward
 from robax.model.components.norms import RMSNorm
 
@@ -74,7 +75,7 @@ class TransformerBlock(nn.Module):
         Returns:
             [N, L, D] output embeddings
         """
-        x = nn.with_logical_constraint(x, ("act_batch", "act_len", "act_emb"))  # type: ignore
+        x = nn.with_logical_constraint(x, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         inputs_normalized = self.pre_attention_norm(x)  # [N, L, D]
         positions = jnp.arange(x.shape[1])[None, :]  # [1, L]
         attn_output = self.attn(inputs_normalized, positions, attn_mask, use_kv_cache)  # [N, L, D]

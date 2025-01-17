@@ -6,11 +6,12 @@ from typing import Any, Dict, Optional, Tuple
 import attrs
 import flax.linen as nn
 import jax
-import optax
+import optax  # type: ignore
 
+from robax.model.components.axes_names import BATCH_AXIS
 from robax.utils.observation import Observation  # type: ignore
 
-DEFAULT_PMAP_AXIS_NAME = "batch"
+DEFAULT_PMAP_AXIS_NAME = BATCH_AXIS
 
 
 @attrs.define(frozen=True)

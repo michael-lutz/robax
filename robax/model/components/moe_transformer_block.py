@@ -75,7 +75,7 @@ class MoETransformerBlock(nn.Module):
         if self.dropout:
             self.drop = nn.Dropout(self.dropout, self.dropout_bdims)
         else:
-            self.drop = lambda x, _: x
+            self.drop = lambda x, _: x  # type: ignore
         if self.post_norms:
             self.post_attention_norms = {
                 name: RMSNorm(name=f"{name}_post_attn_norm") for name in self.mixture_specs
@@ -147,19 +147,14 @@ class MoETransformerBlock(nn.Module):
             all_k.append(k_mixture)
             all_v.append(v_mixture)
 
-        all_q = jnp.concatenate(all_q, axis=1)
-        all_k = jnp.concatenate(all_k, axis=1)
-        all_v = jnp.concatenate(all_v, axis=1)
-        # all [B, L, H]
+        q = jnp.concatenate(all_q, axis=1)  # [B, L, H]
+        k = jnp.concatenate(all_k, axis=1)  # [B, L, H]
+        v = jnp.concatenate(all_v, axis=1)  # [B, L, H]
 
         # Apply attention using the reordered attention mask in a single operation
         attn_output = apply_attention(
-            all_q,
-            all_k,
-            all_v,
-            attn_mask,
-            attn_logits_softcap=self.attn_logits_softcap,
-        )
+            q, k, v, attn_mask, attn_logits_softcap=self.attn_logits_softcap
+        )  # [B, L, H]
 
         # Breaking down to the individual mixtures, projecting back to respective embed dims
         output = []

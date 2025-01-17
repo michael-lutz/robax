@@ -1,6 +1,7 @@
 """Base implementation of attention"""
 
 from typing import Optional, Tuple
+
 import einops
 import flax.linen as nn
 import jax
@@ -14,6 +15,14 @@ from robax.model.components.pos_embed import apply_rope
 def make_attn_mask(input_mask: jax.Array, mask_ar: jax.Array) -> jax.Array:
     """Returns attention mask bool[B, N, N] to use in transformer.
 
+    Args:
+        input_mask: bool[B, N] true if its part of the input, false if padding.
+        mask_ar: int32[B, N] mask that's 1 where previous tokens cannot depend on
+            it and 0 where it shares the same attention mask as the previous token.
+
+    Returns:
+        bool[B, N, N] attention mask
+
     Tokens can attend to valid inputs tokens which have a cumulative mask_ar
     smaller or equal to theirs. This way `mask_ar` int[B, N] can be used to
     setup several types of attention, for example:
@@ -26,11 +35,6 @@ def make_attn_mask(input_mask: jax.Array, mask_ar: jax.Array) -> jax.Array:
 
       [[1 0 1 0 1 0 0 1 0 0]]: causal attention between 4 blocks. Tokens of a
           block can attend all previous blocks and all tokens on the same block.
-
-    Args:
-        input_mask: bool[B, N] true if its part of the input, false if padding.
-        mask_ar: int32[B, N] mask that's 1 where previous tokens cannot depend on
-            it and 0 where it shares the same attention mask as the previous token.
     """
     cumsum = jnp.cumsum(mask_ar, axis=1)
     attn_mask = cumsum[:, None, :] <= cumsum[:, :, None]

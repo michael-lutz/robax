@@ -1,9 +1,12 @@
 """Linear layer implementation"""
 
 from typing import Optional
+
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+
+from robax.model.components.axes_names import BATCH_AXIS, EMBEDDING_AXIS, LENGTH_AXIS
 
 
 class MlpBlock(nn.Module):
@@ -27,18 +30,17 @@ class MlpBlock(nn.Module):
         Returns:
             [..., D] output embeddings
         """
-        inits = dict(
-            kernel_init=nn.initializers.xavier_uniform(),
-            bias_init=nn.initializers.normal(stddev=1e-6),
-        )
+        kernel_init = nn.initializers.xavier_uniform()
+        bias_init = nn.initializers.normal(stddev=1e-6)
 
         d = x.shape[-1]
-        x = nn.Dense(self.mlp_dim or 4 * d, dtype=self.dtype_mm, **inits)(x)
-        # In some extreme batch-size cases, this is needed as of Sept 2024:
-        x = nn.with_logical_constraint(x, ("act_batch", "act_len", "act_emb"))
+        x = nn.Dense(
+            self.mlp_dim or 4 * d, dtype=self.dtype_mm, kernel_init=kernel_init, bias_init=bias_init
+        )(x)
+        x = nn.with_logical_constraint(x, (BATCH_AXIS, LENGTH_AXIS, EMBEDDING_AXIS))  # type: ignore
         x = nn.gelu(x)
         x = nn.Dropout(rate=self.dropout)(x, deterministic)
-        x = nn.Dense(d, dtype=self.dtype_mm, **inits)(x)
+        x = nn.Dense(d, dtype=self.dtype_mm, kernel_init=kernel_init, bias_init=bias_init)(x)
         return x
 
 
