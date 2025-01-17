@@ -37,6 +37,7 @@ class BaseTrainStep(ABC):
         model: nn.Module,
         observation: Observation,
         target: jax.Array,
+        debug: bool = False,
         **additional_inputs: jax.Array,
     ) -> jax.Array:
         """Computes the loss for the train step."""
@@ -64,6 +65,7 @@ class BaseTrainStep(ABC):
         optimizer: optax.GradientTransformation,
         observation: Observation,
         target: jax.Array,
+        debug: bool = False,
         **additional_inputs: jax.Array,
     ) -> Tuple[Dict[str, Any], optax.OptState, jax.Array, jax.Array]:
         """Computes the new parameters for the train step.
@@ -88,6 +90,7 @@ class BaseTrainStep(ABC):
             model=model,
             observation=observation,
             target=target,
+            debug=debug,
             **additional_inputs,
         )
         if self.do_pmap:
@@ -109,6 +112,7 @@ class BaseTrainStep(ABC):
         observation: Observation,
         target: jax.Array,
         unbatched_prediction_shape: Tuple[int, int],
+        debug: bool = False,
         **additional_inputs: jax.Array,
     ) -> Tuple[jax.Array, Dict[str, Any], optax.OptState, jax.Array, jax.Array]:
         """Call the train step and returns (prng_key, params, opt_state, loss, grads).
@@ -122,6 +126,9 @@ class BaseTrainStep(ABC):
             observation: The observation to use for the train step.
             target: The target to use for the train step.
             unbatched_prediction_shape: The shape of the unbatched prediction.
+            debug: Whether to use debug mode.
+            **additional_inputs: Additional inputs to use for the train step.
+
         Returns:
             prng_key: The PRNG key to use for the train step.
             params: The new parameters for the train step.
@@ -138,15 +145,7 @@ class BaseTrainStep(ABC):
             params, opt_state, loss, grads = jax.pmap(
                 self.compute_new_params,
                 axis_name=self.pmap_axis_name,
-            )(
-                params=params,
-                opt_state=opt_state,
-                model=model,
-                optimizer=optimizer,
-                observation=observation,
-                target=target,
-                **additional_inputs,
-            )
+            )(params, opt_state, model, optimizer, observation, target, debug, **additional_inputs)
         else:
             params, opt_state, loss, grads = self.compute_new_params(
                 params=params,
@@ -155,6 +154,7 @@ class BaseTrainStep(ABC):
                 optimizer=optimizer,
                 observation=observation,
                 target=target,
+                debug=debug,
                 **additional_inputs,
             )
 

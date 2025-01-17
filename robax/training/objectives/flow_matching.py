@@ -90,9 +90,10 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
         model: nn.Module,
         observation: Observation,
         target: jax.Array,
+        debug: bool = False,
         **additional_inputs: jax.Array,
     ) -> jax.Array:
-        """Computes the action loss for flow matching"""
+        """Computes the flow matching action loss."""
         starting_noise: jax.Array = additional_inputs["starting_noise"]
         timesteps: jax.Array = additional_inputs["timesteps"]
         interpolated_action = interpolate_noise_and_target(starting_noise, target, timesteps)
@@ -106,6 +107,10 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
 
         gt_vector_field = optimal_transport_vector_field(starting_noise, target)
         mse_loss = jnp.mean(jnp.square(predicted_field - gt_vector_field))
+        if debug:
+            import pdb
+
+            pdb.set_trace()
         return mse_loss
 
     def get_additional_inputs(

@@ -48,7 +48,7 @@ from robax.model.components.norms import RMSNorm
 from robax.model.components.token_embed import Embedder
 from robax.model.img_model import vit
 from robax.model.policy.base_policy import BasePolicy
-from robax.training.objectives.flow_matching_action import sample_starting_noise
+from robax.training.objectives.flow_matching import sample_starting_noise
 from robax.utils.observation import Observation
 
 

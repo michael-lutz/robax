@@ -13,14 +13,7 @@ from robax.utils.observation import Observation
 
 @attrs.define(frozen=True)
 class MSEObjective(BaseTrainStep):
-    """Flow matching action train step."""
-
-    cutoff_value: float = attrs.field(default=0.999)
-    """Cutoff value for the beta distribution."""
-    beta_a: float = attrs.field(default=1.5)
-    """Alpha parameter for the beta distribution."""
-    beta_b: float = attrs.field(default=1.0)
-    """Beta parameter for the beta distribution."""
+    """MSE objective."""
 
     def get_loss(
         self,
@@ -28,11 +21,17 @@ class MSEObjective(BaseTrainStep):
         model: nn.Module,
         observation: Observation,
         target: jax.Array,
+        debug: bool = False,
         **additional_inputs: jax.Array,
     ) -> jax.Array:
-        """Computes the action loss for flow matching"""
+        """Computes the MSE loss."""
+
         predicted_action, _ = model.apply(params, observation=observation)
         mse_loss = jnp.mean(jnp.square(predicted_action - target))
+        if debug:
+            import pdb
+
+            pdb.set_trace()
         return mse_loss
 
     def get_additional_inputs(

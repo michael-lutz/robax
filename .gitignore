@@ -7,4 +7,5 @@
 checkpoints/
 wandb/
 scratch/
+experimental/
 build/

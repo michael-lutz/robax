@@ -27,7 +27,7 @@ training:
 objective:
   name: "flow_matching"
   args:
-    do_pmap: true
+    do_pmap: false
     pmap_axis_name: "batch"
     cutoff_value: 0.999
     beta_a: 1.5
@@ -50,9 +50,8 @@ model:
       text: "gemma"
       proprio: "action_expert"
       action: "action_expert"
-    depth: 12
+    depth: 6
     num_heads: 6
     num_kv_heads: 1
     head_dim: 64
     dropout: 0.1
-    unbatched_prediction_shape: [14, 2]

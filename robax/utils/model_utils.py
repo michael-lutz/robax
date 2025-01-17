@@ -46,10 +46,8 @@ def get_objective(config: ObjectiveConfig) -> BaseTrainStep:
         from robax.training.objectives.mse import MSEObjective
 
         return MSEObjective(**config["args"])
-    elif config["name"] == "flow_matching_action":
-        from robax.training.objectives.flow_matching_action import (
-            FlowMatchingActionTrainStep,
-        )
+    elif config["name"] == "flow_matching":
+        from robax.training.objectives.flow_matching import FlowMatchingActionTrainStep
 
         return FlowMatchingActionTrainStep(**config["args"])
     else:
@@ -68,7 +66,9 @@ def load_config(path: str) -> Config:
     with open(path, "r") as file:
         config: Config = yaml.safe_load(file)
 
-    # TODO: add checks to make sure the config is valid
+    assert config["data"]["action_history_length"] + config["data"]["action_target_length"] == len(
+        config["data"]["delta_timestamps"]["action"]
+    )
 
     return config
 

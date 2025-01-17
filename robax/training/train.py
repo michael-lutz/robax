@@ -59,9 +59,6 @@ def initialize_training(
         shuffle=True,
         transform=from_state_and_env_state,  # TODO: create way to specify in config...
     )
-    import pdb
-
-    pdb.set_trace()
     unbatched_prediction_shape = (
         config["data"]["action_target_length"],
         config["data"]["action_feature_size"],
@@ -152,6 +149,7 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
                 optimizer=optimizer,
                 observation=batch,
                 target=target_action,
+                debug=False,
                 unbatched_prediction_shape=(
                     config["data"]["action_target_length"],
                     config["data"]["action_feature_size"],
