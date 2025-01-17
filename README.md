@@ -1,6 +1,9 @@
 # Design Overview
 Robax is a Python package for training modern robotics models in JAX.
 
+PI Zero policy trained on the Push T task.
+
+![PI Zero policy trained on the Push T task](./assets/pi_zero_push_t_rollout.mp4)
 
 ### Repository Structure
 ```
@@ -9,19 +12,16 @@ Robax is a Python package for training modern robotics models in JAX.
   │   ├── components/
   │   │   └── attention.py, moe_transformer_block.py, etc.
   │   ├── img_model/
-  │   │   └── vit.py
+  │   │   └── base_img_model.py, etc.
   │   └── policy/
-  │   │   └── pi_zero.py
-  │   │   └── ...
+  │   │   └── base_policy.py, pi_zero.py, mlp_policy.py, etc.
   ├── training/ (will be refactored soon...)
   │   ├── data_utils/
-  │   │   └── jax_dataloader.py
-  │   │   └── ...
+  │   │   └── dataloader.py, etc.
   │   ├── objectives/
-  │   │   └── flow_matching_action.py
-  │   │   └── ...
+  │   │   └── base_train_step.py, flow_matching.py, mse.py, etc.
   │   └── train.py, etc.
   ├── utils/
-  │   └── model_visualization.py, etc.
-  └── tests/
+  │   └── model_utils.py, model_visualization.py, etc.
+  └── tests/ (WIP)
 ```
