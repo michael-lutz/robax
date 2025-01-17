@@ -1,16 +1,15 @@
 """Transformer Block Implementation"""
 
-from typing import Any, Tuple
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
 from robax.model.components.attention import Attention
 from robax.model.components.mlp import FeedForward
 from robax.model.components.norms import RMSNorm
 
 
-class Block(nn.Module):
+class TransformerBlock(nn.Module):
     """Transformer block.
 
     Attributes:
@@ -33,9 +32,9 @@ class Block(nn.Module):
 
     dropout: float = 0.0
     dropout_bdims: tuple[int, ...] = ()
-    cache_dtype: jnp.dtype | None = None
+    cache_dtype: str | None = None
 
-    def setup(self):
+    def setup(self) -> None:
         self.pre_attention_norm = RMSNorm()
         self.attn = Attention(
             num_heads=self.num_heads,
@@ -59,20 +58,17 @@ class Block(nn.Module):
     def __call__(
         self,
         x: jax.Array,
-        unused_scan_arg: Any,
-        positions: jax.Array,
+        *,
         attn_mask: jax.Array,
-        decode: bool,
+        use_kv_cache: bool,
         deterministic: bool = True,
-    ) -> Tuple[jax.Array, Any]:
+    ) -> jax.Array:
         """Transformer block forward pass.
 
         Args:
-            x: [N, L, D] input tokens
-            unused_scan_arg: unused scan argument (has to be passed to nn.scan)
-            positions: [N, L] absolute positions of the tokens
-            attn_mask: [N, 1, L, S] attention mask
-            decode: whether to use kv-cache
+            x: [B, L, D] input tokens
+            attn_mask: [B, 1, L, L] attention mask
+            use_kv_cache: whether to use kv-cache
             deterministic: whether to use dropout
 
         Returns:
@@ -80,7 +76,8 @@ class Block(nn.Module):
         """
         x = nn.with_logical_constraint(x, ("act_batch", "act_len", "act_emb"))  # type: ignore
         inputs_normalized = self.pre_attention_norm(x)  # [N, L, D]
-        attn_output = self.attn(inputs_normalized, positions, attn_mask, decode)  # [N, L, D]
+        positions = jnp.arange(x.shape[1])[None, :]  # [1, L]
+        attn_output = self.attn(inputs_normalized, positions, attn_mask, use_kv_cache)  # [N, L, D]
 
         if self.post_norms:
             attn_output = self.post_attention_norm(attn_output)
@@ -94,4 +91,4 @@ class Block(nn.Module):
         if self.post_norms:
             outputs = self.post_ffw_norm(outputs)
         outputs = residual + outputs  # [N, L, D]
-        return outputs, unused_scan_arg
+        return outputs
