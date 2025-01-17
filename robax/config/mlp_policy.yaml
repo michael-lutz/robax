@@ -1,0 +1,37 @@
+project_name: "mlp_policy_pusht"
+experiment_name: "first_run"
+
+data:
+  dataset_id: "lerobot/pusht_keypoints"
+  delta_timestamps:
+    observation.environment_state: [-0.1, 0.0]
+    observation.state: [-0.1, 0.0]
+    action: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+  proprio_length: 2
+  proprio_feature_size: 18
+  action_history_length: 0
+  action_target_length: 8
+  action_feature_size: 2
+  image_length: 0
+  text_length: 0
+  num_workers: 1
+  batch_size: 128
+
+training:
+  learning_rate: 0.0001
+  epochs: 10
+  log_every_n_steps: 1
+  save_every_n_steps: 100
+  seed: 0
+
+objective:
+  name: "mse"
+  args:
+    do_pmap: false
+    pmap_axis_name: "batch"
+
+model:
+  name: "mlp_policy"
+  args:
+    num_layers: 3
+    embed_dim: 256

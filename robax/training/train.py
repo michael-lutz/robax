@@ -15,8 +15,12 @@ import wandb
 from robax.config.base_training_config import Config
 from robax.training.common_transforms import from_state_and_env_state
 from robax.training.data_utils.dataloader import DataLoader
-from robax.training.objectives.flow_matching_action import FlowMatchingActionTrainStep
-from robax.utils.model_utils import get_model, load_config, save_checkpoint
+from robax.utils.model_utils import (
+    get_model,
+    get_objective,
+    load_config,
+    save_checkpoint,
+)
 from robax.utils.observation import Observation
 
 
@@ -55,7 +59,14 @@ def initialize_training(
         shuffle=True,
         transform=from_state_and_env_state,  # TODO: create way to specify in config...
     )
-    model = get_model(config["model"])
+    unbatched_prediction_shape = (
+        config["data"]["action_target_length"],
+        config["data"]["action_feature_size"],
+    )
+    model = get_model(
+        config["model"],
+        unbatched_prediction_shape=unbatched_prediction_shape,
+    )
     optimizer = optax.adam(learning_rate=1e-3)
 
     init_observation: Observation = {
@@ -64,13 +75,7 @@ def initialize_training(
         "proprio": jnp.ones(
             (batch_size, config["data"]["proprio_length"], config["data"]["proprio_feature_size"])
         ),  # proprio # TODO: make this configurable
-        "action": jnp.ones(
-            (
-                batch_size,
-                config["data"]["action_history_length"] + config["data"]["action_target_length"],
-                config["data"]["action_feature_size"],
-            )
-        ),
+        "action": None,  # TODO: make this configurable
     }
     init_noisy_action = jnp.ones(
         (
@@ -113,20 +118,14 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
     prng_key, dataloader, model, optimizer, params, opt_state = initialize_training(
         jax.random.PRNGKey(config["training"]["seed"]), config
     )
-    train_step = FlowMatchingActionTrainStep(
-        model=model,
-        optimizer=optimizer,
-        **config["objective"]["args"],
-        unbatched_prediction_shape=(
-            config["data"]["action_target_length"],
-            config["data"]["action_feature_size"],
-        ),
-    )
+    train_step = get_objective(config["objective"])
 
     # splitting action into historical and target
-    action_split_idx = (
-        np.where(np.array(config["data"]["delta_timestamps"]["action"]) == 0.0)[0][0] + 1
-    )
+    try:
+        action_timesteps = np.array(config["data"]["delta_timestamps"]["action"])
+        action_split_idx = np.where(action_timesteps == 0.0)[0][0]
+    except:
+        raise ValueError("0.0 must be in delta_timestamps in the action key")
     assert action_split_idx == config["data"]["action_history_length"]
 
     for epoch in range(config["training"]["epochs"]):
@@ -136,14 +135,24 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
             action = batch["action"]
             assert action is not None
             historical_action = action[:, :action_split_idx]
+            if historical_action.shape[1] == 0:
+                batch["action"] = None
+            else:
+                batch["action"] = historical_action
+
             target_action = action[:, action_split_idx:]
-            batch["action"] = historical_action
             prng_key, params, opt_state, loss, grads = train_step(
                 prng_key=prng_key,
                 params=params,
                 opt_state=opt_state,
+                model=model,
+                optimizer=optimizer,
                 observation=batch,
                 target=target_action,
+                unbatched_prediction_shape=(
+                    config["data"]["action_target_length"],
+                    config["data"]["action_feature_size"],
+                ),
             )
             if i % config["training"]["log_every_n_steps"] == 0:
                 log(epoch, loss)

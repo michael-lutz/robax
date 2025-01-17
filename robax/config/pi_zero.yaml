@@ -1,4 +1,4 @@
-experiment_name: "flow_matching"
+experiment_name: "pi_zero"
 project_name: "first_run"
 
 data:
@@ -27,6 +27,8 @@ training:
 objective:
   name: "flow_matching"
   args:
+    do_pmap: true
+    pmap_axis_name: "batch"
     cutoff_value: 0.999
     beta_a: 1.5
     beta_b: 1.0

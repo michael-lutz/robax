@@ -131,7 +131,7 @@ class PiZero(BasePolicy):
         out: Dict[str, Any] = {}
 
         # Embed necessary inputs
-        action_token_embed = self.embed_action(action, timesteps)  # [B, A, D]
+        action_token_embed = self.embed_action(action, timesteps=timesteps)  # [B, A, D]
 
         if obs_proprio is not None:
             proprio_token_embed = self.embed_proprio(obs_proprio)  # [B, P, D]
@@ -244,7 +244,7 @@ class PiZero(BasePolicy):
 
         return prng, noisy_action
 
-    def embed_action(self, action: jax.Array, timesteps: jax.Array) -> jax.Array:
+    def embed_action(self, action: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the action into the action expert
 
         Args:
@@ -254,13 +254,14 @@ class PiZero(BasePolicy):
         Returns:
             [B, A, D] action embeddings
         """
+        timesteps = additional_inputs["timesteps"]
         feature_size = self.mixture_specs[self.input_expert_map["action"]]["embed_dim"]
         action_token_embed = ActionEmbedder(embed_dim=feature_size, name="action_embedder")(
             action, timesteps
         )  # [B, A, D]
         return action_token_embed
 
-    def embed_proprio(self, proprio: jax.Array) -> jax.Array:
+    def embed_proprio(self, proprio: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the proprioceptive features into the action expert
 
         Args:
@@ -275,7 +276,7 @@ class PiZero(BasePolicy):
         )  # [B, P, D]
         return proprio_token_embed
 
-    def embed_images(self, images: jax.Array) -> jax.Array:
+    def embed_images(self, images: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the images into the gemma expert
 
         Args:
@@ -297,7 +298,7 @@ class PiZero(BasePolicy):
         assert isinstance(image_token_embed, jax.Array)
         return image_token_embed
 
-    def embed_text(self, text: jax.Array) -> jax.Array:
+    def embed_text(self, text: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the text
 
         Args:

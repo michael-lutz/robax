@@ -2,20 +2,21 @@
 
 import os
 import pickle
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import flax.linen as nn
 import yaml
 
-from robax.config.base_training_config import Config, ModelConfig
+from robax.config.base_training_config import Config, ModelConfig, ObjectiveConfig
+from robax.training.objectives.base_train_step import BaseTrainStep
 
 
-def get_model(config: ModelConfig) -> nn.Module:
+def get_model(config: ModelConfig, unbatched_prediction_shape: Tuple[int, int]) -> nn.Module:
     """Barebones config-based model instantiation
 
     Args:
         config: The model config.
-
+        unbatched_prediction_shape: The shape of the unbatched prediction.
     Returns:
         The model.
     """
@@ -23,9 +24,36 @@ def get_model(config: ModelConfig) -> nn.Module:
     if config["name"] == "pi_zero":
         from robax.model.policy.pi_zero import PiZero
 
-        return PiZero(**config["args"])
+        return PiZero(**config["args"], unbatched_prediction_shape=unbatched_prediction_shape)
+    elif config["name"] == "mlp_policy":
+        from robax.model.policy.mlp_policy import MLPPolicy
+
+        return MLPPolicy(**config["args"], unbatched_prediction_shape=unbatched_prediction_shape)
     else:
         raise ValueError("Unknown model name in config")
+
+
+def get_objective(config: ObjectiveConfig) -> BaseTrainStep:
+    """Barebones config-based objective instantiation
+
+    Args:
+        config: The objective config.
+
+    Returns:
+        The objective.
+    """
+    if config["name"] == "mse":
+        from robax.training.objectives.mse import MSEObjective
+
+        return MSEObjective(**config["args"])
+    elif config["name"] == "flow_matching_action":
+        from robax.training.objectives.flow_matching_action import (
+            FlowMatchingActionTrainStep,
+        )
+
+        return FlowMatchingActionTrainStep(**config["args"])
+    else:
+        raise ValueError("Unknown objective name in config")
 
 
 def load_config(path: str) -> Config:
@@ -39,6 +67,8 @@ def load_config(path: str) -> Config:
     """
     with open(path, "r") as file:
         config: Config = yaml.safe_load(file)
+
+    # TODO: add checks to make sure the config is valid
 
     return config
 

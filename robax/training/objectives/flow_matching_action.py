@@ -3,6 +3,7 @@
 from typing import Any, Dict, Tuple
 
 import attrs
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
@@ -86,16 +87,17 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
     def get_loss(
         self,
         params: Dict[str, Any],
+        model: nn.Module,
         observation: Observation,
         target: jax.Array,
-        **additional_inputs: jax.Array
+        **additional_inputs: jax.Array,
     ) -> jax.Array:
         """Computes the action loss for flow matching"""
         starting_noise: jax.Array = additional_inputs["starting_noise"]
         timesteps: jax.Array = additional_inputs["timesteps"]
         interpolated_action = interpolate_noise_and_target(starting_noise, target, timesteps)
 
-        predicted_field, _ = self.model.apply(
+        predicted_field, _ = model.apply(
             params,
             observation=observation,
             noisy_action=interpolated_action,
@@ -110,14 +112,13 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
         self,
         prng_key: jax.Array,
         observation: Observation,
+        unbatched_prediction_shape: Tuple[int, int],
     ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """Generates the additional inputs for the train step."""
         batch_size = get_batch_size(observation)
         timesteps = sample_tau(prng_key, (batch_size,))
         prng_key, _ = jax.random.split(prng_key)
-        starting_noise = sample_starting_noise(
-            prng_key, (batch_size, *self.unbatched_prediction_shape)
-        )
+        starting_noise = sample_starting_noise(prng_key, (batch_size, *unbatched_prediction_shape))
         prng_key, _ = jax.random.split(prng_key)
         training_inputs = {
             "timesteps": timesteps,

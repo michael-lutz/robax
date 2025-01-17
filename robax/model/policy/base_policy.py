@@ -13,22 +13,22 @@ class BasePolicy(ABC, nn.Module):
     """Abstract Base Class for PiZero Policy"""
 
     @abstractmethod
-    def embed_action(self, action: jax.Array, timesteps: jax.Array) -> jax.Array:
+    def embed_action(self, action: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the action into the action expert"""
         pass
 
     @abstractmethod
-    def embed_proprio(self, proprio: jax.Array) -> jax.Array:
+    def embed_proprio(self, proprio: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the proprioceptive features into the action expert"""
         pass
 
     @abstractmethod
-    def embed_images(self, images: jax.Array) -> jax.Array:
+    def embed_images(self, images: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the images into the gemma expert"""
         pass
 
     @abstractmethod
-    def embed_text(self, text: jax.Array) -> jax.Array:
+    def embed_text(self, text: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the text"""
         pass
 
