@@ -6,7 +6,7 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
-from robax.model.components.axes_names import BATCH_AXIS, EMBEDDING_AXIS, LENGTH_AXIS
+from robax.model.components.default import BATCH_AXIS, EMBEDDING_AXIS, LENGTH_AXIS
 
 
 class MlpBlock(nn.Module):

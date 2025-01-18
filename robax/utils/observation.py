@@ -1,8 +1,10 @@
 """Observation TypedDict"""
 
-from typing import Dict, TypedDict
+from typing import Mapping, TypedDict
 
 import jax
+
+from robax.utils.numpy_observation import NumpyObservation
 
 
 class Observation(TypedDict):
@@ -19,7 +21,7 @@ class Observation(TypedDict):
 
 
 def observation_from_dict(
-    observation_dict: Dict[str, jax.Array | None],
+    observation_dict: Mapping[str, jax.Array | None],
 ) -> Observation:
     """Create an observation"""
     return Observation(
@@ -27,6 +29,32 @@ def observation_from_dict(
         text=observation_dict.get("text", None),
         proprio=observation_dict.get("proprio", None),
         action=observation_dict.get("action", None),
+    )
+
+
+def observation_from_numpy_observation(numpy_observation: NumpyObservation) -> Observation:
+    """Convert a numpy observation to a jax observation"""
+    return Observation(
+        images=(
+            jax.numpy.array(numpy_observation.get("images"))
+            if numpy_observation.get("images") is not None
+            else None
+        ),
+        text=(
+            jax.numpy.array(numpy_observation.get("text"))
+            if numpy_observation.get("text") is not None
+            else None
+        ),
+        proprio=(
+            jax.numpy.array(numpy_observation.get("proprio"))
+            if numpy_observation.get("proprio") is not None
+            else None
+        ),
+        action=(
+            jax.numpy.array(numpy_observation.get("action"))
+            if numpy_observation.get("action") is not None
+            else None
+        ),
     )
 
 

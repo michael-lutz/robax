@@ -28,7 +28,7 @@ objective:
   name: "mse"
   args:
     do_pmap: false
-    pmap_axis_name: "batch"
+    pmap_axis_name: "act_batch"
 
 model:
   name: "mlp_policy"

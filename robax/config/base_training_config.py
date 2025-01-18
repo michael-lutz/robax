@@ -35,6 +35,13 @@ class ModelConfig(TypedDict):
     args: Dict[str, Any]  # bespoke to each model
 
 
+class EvaluationConfig(TypedDict):
+    env_name: str
+    num_envs: int
+    episode_length: int
+    action_inference_range: List[int]
+
+
 class Config(TypedDict):
     experiment_name: str
     project_name: str

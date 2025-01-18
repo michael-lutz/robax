@@ -1,20 +1,19 @@
 """Train the model"""
 
 import argparse
-import os
-import pickle
 from typing import Any, Dict, Tuple
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax  # type: ignore
 
 import wandb
 from robax.config.base_training_config import Config
-from robax.training.common_transforms import from_state_and_env_state
 from robax.training.data_utils.dataloader import DataLoader
+from robax.training.data_utils.obs_transforms.pusht_keypoint_transform import (
+    PushTKeypointTransform,
+)
 from robax.utils.model_utils import (
     get_model,
     get_objective,
@@ -57,7 +56,7 @@ def initialize_training(
         batch_size=batch_size,
         num_workers=config["data"]["num_workers"],
         shuffle=True,
-        transform=from_state_and_env_state,  # TODO: create way to specify in config...
+        transform=PushTKeypointTransform(),  # TODO: create way to specify in config...
     )
     unbatched_prediction_shape = (
         config["data"]["action_target_length"],

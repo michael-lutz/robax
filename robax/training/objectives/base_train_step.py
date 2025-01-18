@@ -8,7 +8,7 @@ import flax.linen as nn
 import jax
 import optax  # type: ignore
 
-from robax.model.components.axes_names import BATCH_AXIS
+from robax.model.components.default import BATCH_AXIS
 from robax.utils.observation import Observation  # type: ignore
 
 DEFAULT_PMAP_AXIS_NAME = BATCH_AXIS

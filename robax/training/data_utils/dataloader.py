@@ -10,6 +10,9 @@ from datasets import Dataset, DatasetDict, load_dataset  # type: ignore
 from numpy.typing import NDArray
 from PIL.PngImagePlugin import PngImageFile
 
+from robax.training.data_utils.obs_transforms.base_train_obs_transform import (
+    BaseTrainObsTransform,
+)
 from robax.utils.observation import Observation, observation_from_dict
 
 TIMESTAMP = "timestamp"
@@ -200,7 +203,7 @@ class DataLoader:
         dataset_id: str,
         delta_timestamps: Dict[str, List[float]],
         *,
-        transform: Callable[[Dict[str, Any]], Dict[str, Any]] | None = None,
+        transform: BaseTrainObsTransform | None = None,
         average_timestamp_length: float = 0.1,
         batch_size: int = 32,
         shuffle: bool = True,

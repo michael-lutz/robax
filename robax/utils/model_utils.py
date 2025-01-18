@@ -5,9 +5,16 @@ import pickle
 from typing import Any, Dict, Tuple
 
 import flax.linen as nn
+import jax.numpy as jnp
 import yaml
 
-from robax.config.base_training_config import Config, ModelConfig, ObjectiveConfig
+from robax.config.base_training_config import (
+    Config,
+    DataConfig,
+    ModelConfig,
+    ObjectiveConfig,
+)
+from robax.training.data_utils.dataloader import DataLoader
 from robax.training.objectives.base_train_step import BaseTrainStep
 
 
@@ -52,6 +59,37 @@ def get_objective(config: ObjectiveConfig) -> BaseTrainStep:
         return FlowMatchingActionTrainStep(**config["args"])
     else:
         raise ValueError("Unknown objective name in config")
+
+
+def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> DataLoader:
+    """Barebones config-based dataloader instantiation
+
+    Args:
+        config: The dataloader config.
+
+    Returns:
+        The dataloader.
+    """
+    if config["dataset_id"] == "pusht":
+        from robax.training.data_utils.obs_transforms.pusht_keypoint_transform import (
+            PushTKeypointTransform,
+        )
+
+        transform = PushTKeypointTransform
+    else:
+        raise ValueError("Unknown dataset_id in config")
+
+    dataloader = DataLoader(
+        dataset_id=config["dataset_id"],
+        prng_key=subkey,
+        delta_timestamps=config["delta_timestamps"],
+        batch_size=batch_size,
+        num_workers=config["num_workers"],
+        shuffle=True,
+        transform=transform,
+    )
+
+    return dataloader
 
 
 def load_config(path: str) -> Config:
