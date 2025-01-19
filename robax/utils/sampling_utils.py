@@ -15,7 +15,7 @@ def sample_beta(
 
 
 def sample_uniform(
-    prng: jax.Array, shape: Tuple[int, ...], minval: float, maxval: float
+    prng: jax.Array, shape: Tuple[int, ...], minval: float = 0.0, maxval: float = 1.0
 ) -> jax.Array:
     """Samples from a uniform distribution"""
     unif_sample = jax.random.uniform(prng, shape=shape, minval=minval, maxval=maxval)

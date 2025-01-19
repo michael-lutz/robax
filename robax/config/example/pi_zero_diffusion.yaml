@@ -1,0 +1,65 @@
+experiment_name: "pi_zero_diffusion_push_t"
+project_name: "first_run"
+
+data:
+  dataset_id: "push_t_keypoints"
+  delta_timestamps:
+    observation.environment_state: [-0.1, 0.0]
+    observation.state: [-0.1, 0.0]
+    action: [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+  proprio_length: 2
+  proprio_feature_size: 18
+  action_history_length: 0
+  action_target_length: 16
+  action_feature_size: 2
+  image_length: 0
+  text_length: 0
+  num_workers: 1
+  batch_size: 128
+
+training:
+  learning_rate: 0.0001
+  epochs: 500
+  log_every_n_steps: 1
+  save_every_n_steps: 200
+  eval_every_n_steps: 1000
+  seed: 0
+
+objective:
+  name: "diffusion"
+  args:
+    do_pmap: false
+    pmap_axis_name: "act_batch"
+    num_steps: 10
+    beta_start: 0.0001
+    beta_end: 0.02
+
+model:
+  name: "pi_zero"
+  args:
+    vit_variant: "S/16"
+    llm_vocab_size: 0
+    mixture_specs:
+      gemma:
+        embed_dim: 512
+        mlp_dim: 2048
+      action_expert:
+        embed_dim: 256
+        mlp_dim: 1024
+    input_expert_map:
+      images: "gemma"
+      text: "gemma"
+      proprio: "action_expert"
+      action: "action_expert"
+    depth: 6
+    num_heads: 6
+    num_kv_heads: 1
+    head_dim: 64
+    dropout: 0.1
+
+evaluation:
+  env_name: "push_t"
+  num_envs: 128
+  episode_length: 200
+  action_inference_range: [1, 9]
+
