@@ -2,7 +2,7 @@
 
 import os
 import pickle
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -11,14 +11,18 @@ import yaml
 from robax.config.base_training_config import (
     Config,
     DataConfig,
+    EvaluationConfig,
     ModelConfig,
     ObjectiveConfig,
 )
+from robax.evaluation.batch_evaluation import BatchEvaluator
+from robax.model.policy.base_policy import BasePolicy
+from robax.objectives.base_inference_step import BaseInferenceStep
+from robax.objectives.base_train_step import BaseTrainStep
 from robax.training.data_utils.dataloader import DataLoader
-from robax.training.objectives.base_train_step import BaseTrainStep
 
 
-def get_model(config: ModelConfig, unbatched_prediction_shape: Tuple[int, int]) -> nn.Module:
+def get_model(config: ModelConfig, unbatched_prediction_shape: Tuple[int, int]) -> BasePolicy:
     """Barebones config-based model instantiation
 
     Args:
@@ -40,7 +44,7 @@ def get_model(config: ModelConfig, unbatched_prediction_shape: Tuple[int, int]) 
         raise ValueError("Unknown model name in config")
 
 
-def get_objective(config: ObjectiveConfig) -> BaseTrainStep:
+def get_train_step(config: ObjectiveConfig) -> BaseTrainStep:
     """Barebones config-based objective instantiation
 
     Args:
@@ -50,13 +54,58 @@ def get_objective(config: ObjectiveConfig) -> BaseTrainStep:
         The objective.
     """
     if config["name"] == "mse":
-        from robax.training.objectives.mse import MSEObjective
+        from robax.objectives.mse import MSEObjective
 
-        return MSEObjective(**config["args"])
+        return MSEObjective()
     elif config["name"] == "flow_matching":
-        from robax.training.objectives.flow_matching import FlowMatchingActionTrainStep
+        from robax.objectives.flow_matching import FlowMatchingTrainStep
 
-        return FlowMatchingActionTrainStep(**config["args"])
+        return FlowMatchingTrainStep(
+            cutoff_value=config["args"]["cutoff_value"],
+            beta_a=config["args"]["beta_a"],
+            beta_b=config["args"]["beta_b"],
+        )
+
+    elif config["name"] == "diffusion":
+        from robax.objectives.diffusion import DiffusionTrainStep
+
+        return DiffusionTrainStep()
+
+    else:
+        raise ValueError("Unknown objective name in config")
+
+
+def get_inference_step(
+    config: ObjectiveConfig, unbatched_prediction_shape: Tuple[int, int]
+) -> BaseInferenceStep:
+    """Barebones config-based objective instantiation
+
+    Args:
+        config: The objective config.
+
+    Returns:
+        The objective.
+    """
+    if config["name"] == "mse":
+        from robax.objectives.mse import MSEInferenceStep
+
+        return MSEInferenceStep()
+    elif config["name"] == "diffusion":
+        from robax.objectives.diffusion import DiffusionInferenceStep
+
+        return DiffusionInferenceStep(
+            unbatched_prediction_shape=unbatched_prediction_shape,
+            num_steps=config["args"]["num_steps"],
+            beta_start=config["args"]["beta_start"],
+            beta_end=config["args"]["beta_end"],
+        )
+    elif config["name"] == "flow_matching":
+        from robax.objectives.flow_matching import FlowMatchingInferenceStep
+
+        return FlowMatchingInferenceStep(
+            unbatched_prediction_shape=unbatched_prediction_shape,
+            num_steps=config["args"]["num_steps"],
+        )
     else:
         raise ValueError("Unknown objective name in config")
 
@@ -70,12 +119,12 @@ def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> 
     Returns:
         The dataloader.
     """
-    if config["dataset_id"] == "pusht":
-        from robax.training.data_utils.obs_transforms.pusht_keypoint_transform import (
-            PushTKeypointTransform,
+    if config["dataset_id"] == "push_t_keypoints":
+        from robax.training.data_utils.obs_transforms.pusht_keypoints_transform import (
+            PushTKeypointsTransform,
         )
 
-        transform = PushTKeypointTransform
+        transform = PushTKeypointsTransform
     else:
         raise ValueError("Unknown dataset_id in config")
 
@@ -86,10 +135,39 @@ def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> 
         batch_size=batch_size,
         num_workers=config["num_workers"],
         shuffle=True,
-        transform=transform,
+        transform=transform,  # type: ignore
     )
 
     return dataloader
+
+
+def get_evaluator(
+    config: EvaluationConfig, unbatched_prediction_shape: Tuple[int, int]
+) -> BatchEvaluator:
+    """Barebones config-based evaluator instantiation
+
+    Args:
+        config: The evaluator config.
+
+    Returns:
+        The evaluator.
+    """
+    if config["env_name"] == "pusht":
+        from robax.evaluation.envs.pusht_keypoints_env import PushTKeypointsEvalEnv
+
+        create_env_fn = PushTKeypointsEvalEnv.get_factory_fn()
+
+    else:
+        raise ValueError("Unknown dataset_id in config")
+
+    return BatchEvaluator(
+        inference_step=get_inference_step(config["inference_step"], unbatched_prediction_shape),
+        create_env_fn=create_env_fn,
+        num_envs=config["num_envs"],
+        observation_sizes=config["observation_sizes"],
+        episode_length=config["episode_length"],
+        action_inference_range=config["action_inference_range"],
+    )
 
 
 def load_config(path: str) -> Config:

@@ -9,7 +9,7 @@ from robax.training.data_utils.obs_transforms.base_train_obs_transform import (
 )
 
 
-class PushTKeypointTransform(BaseTrainObsTransform):
+class PushTKeypointsTransform(BaseTrainObsTransform):
     """A class that contains a set of transformations to apply to the Pusht dataset."""
 
     @staticmethod

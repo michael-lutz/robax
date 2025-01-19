@@ -10,13 +10,14 @@ import optax  # type: ignore
 
 import wandb
 from robax.config.base_training_config import Config
+from robax.evaluation.batch_evaluation import BatchEvaluator
+from robax.model.policy.base_policy import BasePolicy
 from robax.training.data_utils.dataloader import DataLoader
-from robax.training.data_utils.obs_transforms.pusht_keypoint_transform import (
-    PushTKeypointTransform,
-)
 from robax.utils.model_utils import (
+    get_dataloader,
+    get_evaluator,
     get_model,
-    get_objective,
+    get_train_step,
     load_config,
     save_checkpoint,
 )
@@ -29,10 +30,11 @@ def initialize_training(
 ) -> Tuple[
     jax.Array,
     DataLoader,
-    nn.Module,
+    BasePolicy,
     optax.GradientTransformation,
     Dict[str, Any],
     optax.OptState,
+    BatchEvaluator,
 ]:
     """Initialize model, optimizer, and data loader.
 
@@ -46,18 +48,11 @@ def initialize_training(
         optimizer: The optimizer.
         params: The parameters.
         opt_state: The optimizer state.
+        evaluator: The evaluator.
     """
     prng_key, subkey = jax.random.split(prng_key)
     batch_size = config["data"]["batch_size"]
-    dataloader = DataLoader(
-        dataset_id=config["data"]["dataset_id"],
-        prng_key=subkey,
-        delta_timestamps=config["data"]["delta_timestamps"],
-        batch_size=batch_size,
-        num_workers=config["data"]["num_workers"],
-        shuffle=True,
-        transform=PushTKeypointTransform(),  # TODO: create way to specify in config...
-    )
+    dataloader = get_dataloader(config["data"], subkey, batch_size)
     unbatched_prediction_shape = (
         config["data"]["action_target_length"],
         config["data"]["action_feature_size"],
@@ -87,14 +82,17 @@ def initialize_training(
 
     batch_size = config["data"]["batch_size"]
     params = model.init(
-        jax.random.PRNGKey(0),
+        jax.random.PRNGKey(config["training"]["seed"]),
         observation=init_observation,
         noisy_action=init_noisy_action,
         timesteps=init_timesteps,
     )
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
-    return prng_key, dataloader, model, optimizer, params, opt_state
+
+    evaluator = get_evaluator(config["evaluation"], unbatched_prediction_shape)
+
+    return prng_key, dataloader, model, optimizer, params, opt_state, evaluator
 
 
 def log(epoch: int, loss: jax.Array) -> None:
@@ -114,10 +112,10 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
     Args:
         config: The configuration for training, including model, data, and training parameters.
     """
-    prng_key, dataloader, model, optimizer, params, opt_state = initialize_training(
+    prng_key, dataloader, model, optimizer, params, opt_state, evaluator = initialize_training(
         jax.random.PRNGKey(config["training"]["seed"]), config
     )
-    train_step = get_objective(config["objective"])
+    train_step = get_train_step(config["objective"])
 
     # splitting action into historical and target
     action_split_idx = config["data"]["action_history_length"]
@@ -153,6 +151,9 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
                 log(epoch, loss)
             if i % config["training"]["save_every_n_steps"] == 0:
                 save_checkpoint(params, checkpoint_dir, epoch, i)
+            if i % config["training"]["eval_every_n_steps"] == 0:
+                prng_key, average_reward = evaluator.batch_rollout(prng_key, params, model)
+                wandb.log({"evaluation": average_reward})
 
 
 def main() -> None:

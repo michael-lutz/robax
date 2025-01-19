@@ -44,13 +44,3 @@ class BasePolicy(ABC, nn.Module):
     ) -> Tuple[jax.Array, Dict[str, Any]]:
         """Primary call function for the policy"""
         pass
-
-    @abstractmethod
-    def generate_action(
-        self,
-        prng: jax.Array,
-        observation: Observation,
-        **kwargs: Any,
-    ) -> Tuple[jax.Array, jax.Array]:
-        """Generate an action from the policy. Returns prng key and current step action."""
-        pass

@@ -7,40 +7,10 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
-from robax.training.objectives.base_train_step import BaseTrainStep
+from robax.objectives.base_inference_step import BaseInferenceStep
+from robax.objectives.base_train_step import BaseTrainStep
 from robax.utils.observation import Observation, get_batch_size
-
-
-def sample_starting_noise(prng: jax.Array, action_shape: Tuple[int, ...]) -> jax.Array:
-    """Samples starting noise from the target action
-
-    Args:
-        prng: The PRNG key
-        action_shape: The shape of the action [B, A, a]
-    """
-    assert len(action_shape) == 3, "action_shape must be [B, A, a]"
-    return jax.random.normal(prng, action_shape)
-
-
-def sample_tau(
-    prng: jax.Array,
-    timestep_shape: Tuple[int, ...],
-    cutoff_value: float = 0.9,
-    beta_a: float = 1.5,
-    beta_b: float = 1.0,
-) -> jax.Array:
-    """Samples tau from the target action according to the paper's beta distribution
-
-    Args:
-        prng: The PRNG key
-        timestep_shape: The shape of the timesteps [B]
-        cutoff_value: The cutoff value for the beta distribution
-        beta_a: The alpha parameter for the beta distribution
-        beta_b: The beta parameter for the beta distribution
-    """
-    assert len(timestep_shape) == 1, "timestep_shape must be [B]"
-    x = jax.random.beta(prng, a=beta_a, b=beta_b, shape=timestep_shape)
-    return (1 - x) * cutoff_value
+from robax.utils.sampling_utils import sample_gaussian_noise, sample_timesteps
 
 
 def optimal_transport_vector_field(
@@ -74,7 +44,7 @@ def interpolate_noise_and_target(
 
 
 @attrs.define(frozen=True)
-class FlowMatchingActionTrainStep(BaseTrainStep):
+class FlowMatchingTrainStep(BaseTrainStep):
     """Flow matching action train step."""
 
     cutoff_value: float = attrs.field(default=0.999)
@@ -120,13 +90,79 @@ class FlowMatchingActionTrainStep(BaseTrainStep):
         unbatched_prediction_shape: Tuple[int, int],
     ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """Generates the additional inputs for the train step."""
+        assert len(unbatched_prediction_shape) == 2, "unbatched_prediction_shape must be [A, a]"
         batch_size = get_batch_size(observation)
-        timesteps = sample_tau(prng_key, (batch_size,))
-        prng_key, _ = jax.random.split(prng_key)
-        starting_noise = sample_starting_noise(prng_key, (batch_size, *unbatched_prediction_shape))
-        prng_key, _ = jax.random.split(prng_key)
+        # Using a beta distribution as done in the pi_zero paper
+        prng_key, timesteps = sample_timesteps(
+            prng_key,
+            (batch_size,),
+            distribution="beta",
+            cutoff_value=self.cutoff_value,
+            beta_a=self.beta_a,
+            beta_b=self.beta_b,
+        )
+
+        # Standard gaussian noise to start...
+        prng_key, starting_noise = sample_gaussian_noise(
+            prng_key, (batch_size, *unbatched_prediction_shape)
+        )
         training_inputs = {
             "timesteps": timesteps,
             "starting_noise": starting_noise,
         }
         return prng_key, training_inputs
+
+
+@attrs.define(frozen=True)
+class FlowMatchingInferenceStep(BaseInferenceStep):
+    """Flow matching inference step."""
+
+    unbatched_prediction_shape: Tuple[int, int] = attrs.field(default=(1, 1))
+    """The shape of a single action, e.g. [A, a]."""
+    num_steps: int = attrs.field(default=10)
+    """The number of steps to take."""
+
+    def generate_action(
+        self,
+        prng_key: jax.Array,
+        params: Dict[str, Any],
+        model: nn.Module,
+        observation: Observation,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """Generate an action from the policy.
+
+        NOTE: observation["action"] here is assumed to only include action history. It does not
+        include noise, whereas `__call__` does.
+
+        Args:
+            prng_key: [B] PRNG key
+            observation: Observation
+            num_steps: int, number of steps to take
+        Returns:
+            prng_key
+            [B, A, a] action
+        """
+        batch_size = get_batch_size(observation)
+        prng_key, noisy_action = sample_gaussian_noise(
+            prng_key,
+            (batch_size, self.unbatched_prediction_shape[0], self.unbatched_prediction_shape[1]),
+        )
+        delta = 1 / self.num_steps
+
+        # basic integration of the action field
+        for i in range(self.num_steps):
+            tau = jnp.array(i / self.num_steps)
+            tau = jnp.tile(tau, (batch_size,))
+
+            action_field_pred, _ = model.apply(
+                params,
+                observation=observation,
+                inference_mode=True,
+                deterministic=True,
+                timesteps=tau,
+                noisy_action=noisy_action,
+            )
+
+            noisy_action += delta * action_field_pred
+
+        return prng_key, noisy_action

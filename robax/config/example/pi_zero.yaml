@@ -2,7 +2,7 @@ experiment_name: "pi_zero"
 project_name: "first_run"
 
 data:
-  dataset_id: "lerobot/pusht_keypoints"
+  dataset_id: "push_t_keypoints"
   delta_timestamps:
     observation.environment_state: [-0.1, 0.0]
     observation.state: [-0.1, 0.0]
@@ -21,7 +21,8 @@ training:
   learning_rate: 0.0001
   epochs: 10
   log_every_n_steps: 1
-  save_every_n_steps: 100
+  save_every_n_steps: 200
+  eval_every_n_steps: 200
   seed: 0
 
 objective:
@@ -32,6 +33,7 @@ objective:
     cutoff_value: 0.999
     beta_a: 1.5
     beta_b: 1.0
+    num_steps: 10
 
 model:
   name: "pi_zero"

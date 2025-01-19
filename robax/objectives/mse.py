@@ -7,7 +7,8 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
-from robax.training.objectives.base_train_step import BaseTrainStep
+from robax.objectives.base_inference_step import BaseInferenceStep
+from robax.objectives.base_train_step import BaseTrainStep
 from robax.utils.observation import Observation
 
 
@@ -42,3 +43,20 @@ class MSEObjective(BaseTrainStep):
     ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """Generates the additional inputs for the train step."""
         return prng_key, {}
+
+
+@attrs.define(frozen=True)
+class MSEInferenceStep(BaseInferenceStep):
+    """MSE inference step."""
+
+    def generate_action(
+        self,
+        prng_key: jax.Array,
+        params: Dict[str, Any],
+        model: nn.Module,
+        observation: Observation,
+        **kwargs: Any,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """Generates an action from the policy."""
+        predicted_action, _ = model.apply(params, observation=observation)
+        return prng_key, predicted_action

@@ -19,9 +19,10 @@ class DataConfig(TypedDict):
 
 class TrainingConfig(TypedDict):
     learning_rate: float  # TODO: add more optimizer hyperparameters
-    epochs: int
+    epochs: int  # TODO: phase out with larget training setups
     log_every_n_steps: int
     save_every_n_steps: int
+    eval_every_n_steps: int
     seed: int
 
 
@@ -49,3 +50,4 @@ class Config(TypedDict):
     training: TrainingConfig
     objective: ObjectiveConfig
     model: ModelConfig
+    evaluation: EvaluationConfig

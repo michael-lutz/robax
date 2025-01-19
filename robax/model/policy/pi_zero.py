@@ -48,8 +48,7 @@ from robax.model.components.norms import RMSNorm
 from robax.model.components.token_embed import Embedder
 from robax.model.img_model import vit
 from robax.model.policy.base_policy import BasePolicy
-from robax.training.objectives.flow_matching import sample_starting_noise
-from robax.utils.observation import Observation, get_batch_size
+from robax.utils.observation import Observation
 
 
 class PiZero(BasePolicy):
@@ -203,45 +202,6 @@ class PiZero(BasePolicy):
         # [B, A, a] result
 
         return action_field_pred, out
-
-    def generate_action(
-        self,
-        prng: jax.Array,
-        observation: Observation,
-        **kwargs: Any,
-    ) -> Tuple[jax.Array, jax.Array]:
-        """Generate an action from the policy.
-
-        NOTE: observation["action"] here is assumed to only include action history. It does not
-        include noise, whereas `__call__` does.
-
-        Args:
-            prng: [B] PRNG key
-            observation: Observation
-            num_steps: int, number of steps to take
-        Returns:
-            prng
-            [B, A, a] action
-        """
-        batch_size = get_batch_size(observation)
-        num_steps = kwargs["num_steps"]
-        noisy_action = sample_starting_noise(
-            prng,
-            (batch_size, self.unbatched_prediction_shape[0], self.unbatched_prediction_shape[1]),
-        )
-        prng, _ = jax.random.split(prng)
-        delta = 1 / num_steps
-
-        # basic integration of the action field
-        for i in range(num_steps):
-            tau = jnp.array(i / num_steps)
-            tau = jnp.tile(tau, (batch_size,))
-
-            action_field_pred, _ = self(observation, timesteps=tau, noisy_action=noisy_action)
-
-            noisy_action += delta * action_field_pred
-
-        return prng, noisy_action
 
     def embed_action(self, action: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the action into the action expert
