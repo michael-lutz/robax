@@ -12,6 +12,7 @@ import wandb
 from robax.config.base_training_config import Config
 from robax.evaluation.batch_evaluation import BatchEvaluator
 from robax.model.policy.base_policy import BasePolicy
+from robax.objectives.base_train_step import BaseTrainStep
 from robax.training.data_utils.dataloader import DataLoader
 from robax.utils.model_utils import (
     get_dataloader,
@@ -35,6 +36,7 @@ def initialize_training(
     Dict[str, Any],
     optax.OptState,
     BatchEvaluator,
+    BaseTrainStep,
 ]:
     """Initialize model, optimizer, and data loader.
 
@@ -49,6 +51,7 @@ def initialize_training(
         params: The parameters.
         opt_state: The optimizer state.
         evaluator: The evaluator.
+        train_step: The train step.
     """
     prng_key, subkey = jax.random.split(prng_key)
     batch_size = config["data"]["batch_size"]
@@ -90,20 +93,10 @@ def initialize_training(
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
 
-    evaluator = get_evaluator(config["evaluation"], unbatched_prediction_shape)
+    evaluator = get_evaluator(config, unbatched_prediction_shape)
+    train_step = get_train_step(config["objective"])
 
-    return prng_key, dataloader, model, optimizer, params, opt_state, evaluator
-
-
-def log(epoch: int, loss: jax.Array) -> None:
-    """Log the loss and save model checkpoints.
-
-    Args:
-        epoch: The current epoch number.
-        loss: The loss value to log.
-    """
-    wandb.log({"epoch": epoch, "loss": loss.item()})
-    print(f"Epoch {epoch}, Loss: {loss.item()}")
+    return prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step
 
 
 def train_model(config: Config, checkpoint_dir: str) -> None:
@@ -112,14 +105,13 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
     Args:
         config: The configuration for training, including model, data, and training parameters.
     """
-    prng_key, dataloader, model, optimizer, params, opt_state, evaluator = initialize_training(
-        jax.random.PRNGKey(config["training"]["seed"]), config
+    prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step = (
+        initialize_training(jax.random.PRNGKey(config["training"]["seed"]), config)
     )
-    train_step = get_train_step(config["objective"])
 
     # splitting action into historical and target
     action_split_idx = config["data"]["action_history_length"]
-
+    num_batches_per_epoch = len(dataloader)
     for epoch in range(config["training"]["epochs"]):
         dataloader.randomize(prng_key)
         prng_key, _ = jax.random.split(prng_key)
@@ -147,13 +139,16 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
                     config["data"]["action_feature_size"],
                 ),
             )
-            if i % config["training"]["log_every_n_steps"] == 0:
-                log(epoch, loss)
-            if i % config["training"]["save_every_n_steps"] == 0:
+            total_steps = i + num_batches_per_epoch * epoch
+            if total_steps % config["training"]["log_every_n_steps"] == 0:
+                wandb.log({"Epoch": epoch, "Loss": loss.item(), "Step": total_steps})
+                print(f"Epoch {epoch}, Loss: {loss.item()}")
+            if total_steps % config["training"]["save_every_n_steps"] == 0:
                 save_checkpoint(params, checkpoint_dir, epoch, i)
-            if i % config["training"]["eval_every_n_steps"] == 0:
+            if total_steps % config["training"]["eval_every_n_steps"] == 0:
                 prng_key, average_reward = evaluator.batch_rollout(prng_key, params, model)
-                wandb.log({"evaluation": average_reward})
+                print(f"Average reward at epoch {epoch}, step {i}: {average_reward}")
+                wandb.log({"Eval": average_reward.item(), "Step": total_steps})
 
 
 def main() -> None:

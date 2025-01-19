@@ -124,26 +124,23 @@ def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> 
             PushTKeypointsTransform,
         )
 
-        transform = PushTKeypointsTransform
+        transform = PushTKeypointsTransform()
+        dataloader = DataLoader(
+            dataset_id="lerobot/pusht_keypoints",
+            prng_key=subkey,
+            delta_timestamps=config["delta_timestamps"],
+            batch_size=batch_size,
+            num_workers=config["num_workers"],
+            shuffle=True,
+            transform=transform,  # type: ignore
+        )
+
+        return dataloader
     else:
         raise ValueError("Unknown dataset_id in config")
 
-    dataloader = DataLoader(
-        dataset_id=config["dataset_id"],
-        prng_key=subkey,
-        delta_timestamps=config["delta_timestamps"],
-        batch_size=batch_size,
-        num_workers=config["num_workers"],
-        shuffle=True,
-        transform=transform,  # type: ignore
-    )
 
-    return dataloader
-
-
-def get_evaluator(
-    config: EvaluationConfig, unbatched_prediction_shape: Tuple[int, int]
-) -> BatchEvaluator:
+def get_evaluator(config: Config, unbatched_prediction_shape: Tuple[int, int]) -> BatchEvaluator:
     """Barebones config-based evaluator instantiation
 
     Args:
@@ -152,21 +149,27 @@ def get_evaluator(
     Returns:
         The evaluator.
     """
-    if config["env_name"] == "pusht":
+    if config["data"]["dataset_id"] == "push_t_keypoints":
         from robax.evaluation.envs.pusht_keypoints_env import PushTKeypointsEvalEnv
 
         create_env_fn = PushTKeypointsEvalEnv.get_factory_fn()
+        observation_sizes = {
+            "proprio": config["data"]["proprio_length"],
+            "image": None,
+            "text": None,
+            "action": None,
+        }
 
     else:
         raise ValueError("Unknown dataset_id in config")
 
     return BatchEvaluator(
-        inference_step=get_inference_step(config["inference_step"], unbatched_prediction_shape),
+        inference_step=get_inference_step(config["objective"], unbatched_prediction_shape),
         create_env_fn=create_env_fn,
-        num_envs=config["num_envs"],
-        observation_sizes=config["observation_sizes"],
-        episode_length=config["episode_length"],
-        action_inference_range=config["action_inference_range"],
+        num_envs=config["evaluation"]["num_envs"],
+        observation_sizes=observation_sizes,
+        episode_length=config["evaluation"]["episode_length"],
+        action_inference_range=config["evaluation"]["action_inference_range"],
     )
 
 

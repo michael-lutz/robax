@@ -177,7 +177,7 @@ class PiZero(BasePolicy):
             x = block(
                 x=x,
                 attn_mask=attn_mask,
-                use_kv_cache=inference_mode,
+                use_kv_cache=False,  # TODO: properly add caching, and set to inference_mode
                 deterministic=deterministic,
             )
 
