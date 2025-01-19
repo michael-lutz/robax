@@ -15,12 +15,13 @@ Robax is a Python package for training modern robotics models in JAX.
   │   │   └── base_img_model.py, etc.
   │   └── policy/
   │   │   └── base_policy.py, pi_zero.py, mlp_policy.py, etc.
-  ├── training/ (will be refactored soon...)
+  ├── training/
   │   ├── data_utils/
   │   │   └── dataloader.py, etc.
-  │   ├── objectives/
-  │   │   └── base_train_step.py, flow_matching.py, mse.py, etc.
   │   └── train.py, etc.
+  ├── objectives/
+  │   └── base_train_step.py, base_inference_step.py
+  │   └── flow_matching.py, diffusion.py, mse.py, etc.
   ├── utils/
   │   └── model_utils.py, model_visualization.py, etc.
   └── tests/ (WIP)
