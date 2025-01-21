@@ -65,6 +65,12 @@ class PushTKeypointsEvalEnv(BatchableEnv):
         observation, reward, terminated, truncated, info = self.underlying_env.step(action)
         return self.transform_observation(observation), reward, terminated, truncated, info
 
+    def render(self) -> np.ndarray:
+        """Render the environment."""
+        render = self.underlying_env.render()
+        assert isinstance(render, np.ndarray)
+        return render
+
     @classmethod
     def get_factory_fn(cls) -> Callable[[], "PushTKeypointsEvalEnv"]:
         """Create an environment from a config."""

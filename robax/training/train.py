@@ -132,6 +132,30 @@ def train_model(
         )
     )
 
+    @jax.jit
+    def train_step_jit(
+        prng_key: jax.Array,
+        params: Dict[str, Any],
+        opt_state: optax.OptState,
+        observation: Observation,
+        target: jax.Array,
+    ) -> Tuple[jax.Array, Dict[str, Any], optax.OptState, jax.Array, jax.Array]:
+        prng_key, params, opt_state, loss, grads = train_step(
+            prng_key=prng_key,
+            params=params,
+            opt_state=opt_state,
+            model=model,
+            optimizer=optimizer,
+            observation=observation,
+            target=target,
+            debug=debug,
+            unbatched_prediction_shape=(
+                config["data"]["action_target_length"],
+                config["data"]["action_feature_size"],
+            ),
+        )
+        return prng_key, params, opt_state, loss, grads
+
     # splitting action into historical and target
     action_split_idx = config["data"]["action_history_length"]
     num_batches_per_epoch = len(dataloader)
@@ -148,19 +172,12 @@ def train_model(
                 batch["action"] = historical_action
 
             target_action = action[:, action_split_idx:]
-            prng_key, params, opt_state, loss, grads = train_step(
+            prng_key, params, opt_state, loss, _ = train_step_jit(
                 prng_key=prng_key,
                 params=params,
                 opt_state=opt_state,
-                model=model,
-                optimizer=optimizer,
                 observation=batch,
                 target=target_action,
-                debug=debug,
-                unbatched_prediction_shape=(
-                    config["data"]["action_target_length"],
-                    config["data"]["action_feature_size"],
-                ),
             )
             total_steps = i + num_batches_per_epoch * epoch
             if total_steps % config["training"]["log_every_n_steps"] == 0:

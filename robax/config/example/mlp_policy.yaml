@@ -1,5 +1,5 @@
 project_name: "mlp_policy_pusht"
-experiment_name: "first_run"
+experiment_name: "push_t_keypoints"
 
 data:
   dataset_id: "push_t_keypoints"

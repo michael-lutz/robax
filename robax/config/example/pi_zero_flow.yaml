@@ -1,5 +1,5 @@
 experiment_name: "pi_zero_flow_matching_push_t"
-project_name: "first_run"
+project_name: "push_t_keypoints"
 
 data:
   dataset_id: "push_t_keypoints"

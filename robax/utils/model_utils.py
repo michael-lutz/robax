@@ -69,7 +69,12 @@ def get_train_step(config: ObjectiveConfig) -> BaseTrainStep:
     elif config["name"] == "diffusion":
         from robax.objectives.diffusion import DiffusionTrainStep
 
-        return DiffusionTrainStep()
+        return DiffusionTrainStep(
+            num_train_timesteps=config["args"]["num_train_timesteps"],
+            beta_schedule=config["args"]["beta_schedule"],
+            beta_start=config["args"]["beta_start"],
+            beta_end=config["args"]["beta_end"],
+        )
 
     else:
         raise ValueError("Unknown objective name in config")
@@ -95,9 +100,10 @@ def get_inference_step(
 
         return DiffusionInferenceStep(
             unbatched_prediction_shape=unbatched_prediction_shape,
-            num_timesteps=config["args"]["num_timesteps"],
+            num_inference_timesteps=config["args"]["num_inference_timesteps"],
             beta_schedule=config["args"]["beta_schedule"],
-            beta_kwargs=config["args"].get("beta_kwargs", {}),
+            beta_start=config["args"]["beta_start"],
+            beta_end=config["args"]["beta_end"],
         )
     elif config["name"] == "flow_matching":
         from robax.objectives.flow_matching import FlowMatchingInferenceStep
