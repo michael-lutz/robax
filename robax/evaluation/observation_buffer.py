@@ -6,11 +6,7 @@ from typing import Deque, Dict
 import jax.numpy as jnp
 
 from robax.utils.numpy_observation import NumpyObservation
-from robax.utils.observation import (
-    Observation,
-    observation_from_dict,
-    observation_from_numpy_observation,
-)
+from robax.utils.observation import Observation, observation_from_dict
 
 
 class ObservationBuffer:
