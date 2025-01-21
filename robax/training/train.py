@@ -12,11 +12,13 @@ import wandb
 from robax.config.base_training_config import Config
 from robax.evaluation.batch_evaluation import BatchEvaluator
 from robax.model.policy.base_policy import BasePolicy
+from robax.objectives.base_inference_step import BaseInferenceStep
 from robax.objectives.base_train_step import BaseTrainStep
 from robax.training.data_utils.dataloader import DataLoader
 from robax.utils.model_utils import (
     get_dataloader,
     get_evaluator,
+    get_inference_step,
     get_model,
     get_train_step,
     load_checkpoint,
@@ -39,6 +41,7 @@ def initialize_training(
     optax.OptState,
     BatchEvaluator,
     BaseTrainStep,
+    BaseInferenceStep,
 ]:
     """Initialize model, optimizer, and data loader.
 
@@ -54,6 +57,7 @@ def initialize_training(
         opt_state: The optimizer state.
         evaluator: The evaluator.
         train_step: The train step.
+        inference_step: The inference step.
     """
     prng_key, subkey = jax.random.split(prng_key)
     batch_size = config["data"]["batch_size"]
@@ -100,10 +104,21 @@ def initialize_training(
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
 
-    evaluator = get_evaluator(config, unbatched_prediction_shape)
+    evaluator = get_evaluator(config)
     train_step = get_train_step(config["objective"])
+    inference_step = get_inference_step(config["objective"], unbatched_prediction_shape)
 
-    return prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step
+    return (
+        prng_key,
+        dataloader,
+        model,
+        optimizer,
+        params,
+        opt_state,
+        evaluator,
+        train_step,
+        inference_step,
+    )
 
 
 def train_model(
@@ -124,12 +139,20 @@ def train_model(
             config=config,  # type: ignore
         )
 
-    prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step = (
-        initialize_training(
-            jax.random.PRNGKey(config["training"]["seed"]),
-            config,
-            resume_from_checkpoint_path,
-        )
+    (
+        prng_key,
+        dataloader,
+        model,
+        optimizer,
+        params,
+        opt_state,
+        evaluator,
+        train_step,
+        inference_step,
+    ) = initialize_training(
+        jax.random.PRNGKey(config["training"]["seed"]),
+        config,
+        resume_from_checkpoint_path,
     )
 
     @jax.jit
@@ -155,6 +178,12 @@ def train_model(
             ),
         )
         return prng_key, params, opt_state, loss, grads
+
+    @jax.jit
+    def inference_step_jit(
+        prng_key: jax.Array, params: Dict[str, Any], observation: Observation
+    ) -> Tuple[jax.Array, jax.Array]:
+        return inference_step.generate_action(prng_key, params, model, observation)
 
     # splitting action into historical and target
     action_split_idx = config["data"]["action_history_length"]
@@ -187,7 +216,9 @@ def train_model(
             if total_steps % config["training"]["save_every_n_steps"] == 0:
                 save_checkpoint(params, checkpoint_dir, epoch, i)
             if total_steps % config["training"]["eval_every_n_steps"] == 0:
-                prng_key, average_reward = evaluator.batch_rollout(prng_key, params, model)
+                prng_key, average_reward = evaluator.batch_rollout(
+                    prng_key, params, inference_step_jit
+                )
                 print(f"Average reward at epoch {epoch}, step {i}: {average_reward}")
                 if not debug:
                     wandb.log({"Eval": average_reward.item(), "Step": total_steps})

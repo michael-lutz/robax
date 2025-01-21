@@ -146,7 +146,7 @@ def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> 
         raise ValueError("Unknown dataset_id in config")
 
 
-def get_evaluator(config: Config, unbatched_prediction_shape: Tuple[int, int]) -> BatchEvaluator:
+def get_evaluator(config: Config) -> BatchEvaluator:
     """Barebones config-based evaluator instantiation
 
     Args:
@@ -170,7 +170,6 @@ def get_evaluator(config: Config, unbatched_prediction_shape: Tuple[int, int]) -
         raise ValueError("Unknown dataset_id in config")
 
     return BatchEvaluator(
-        inference_step=get_inference_step(config["objective"], unbatched_prediction_shape),
         create_env_fn=create_env_fn,
         num_envs=config["evaluation"]["num_envs"],
         observation_sizes=observation_sizes,
