@@ -95,9 +95,9 @@ def get_inference_step(
 
         return DiffusionInferenceStep(
             unbatched_prediction_shape=unbatched_prediction_shape,
-            num_steps=config["args"]["num_steps"],
-            beta_start=config["args"]["beta_start"],
-            beta_end=config["args"]["beta_end"],
+            num_timesteps=config["args"]["num_timesteps"],
+            beta_schedule=config["args"]["beta_schedule"],
+            beta_kwargs=config["args"].get("beta_kwargs", {}),
         )
     elif config["name"] == "flow_matching":
         from robax.objectives.flow_matching import FlowMatchingInferenceStep

@@ -1,6 +1,7 @@
 """Diffusion Objective"""
 
-from typing import Any, Dict, List, Tuple
+from functools import cache
+from typing import Any, Dict, Tuple
 
 import attrs
 import flax.linen as nn
@@ -13,12 +14,31 @@ from robax.utils.observation import Observation, get_batch_size
 from robax.utils.sampling_utils import sample_gaussian_noise, sample_timesteps
 
 
+def generate_betas(
+    num_timesteps: int,
+    schedule: str,
+    dtype: jnp.dtype = jnp.float32,
+    **kwargs: Any,
+) -> jax.Array:
+    """Generates a beta schedule for the diffusion process."""
+    if schedule == "linear":
+        return jnp.linspace(0, 1, num_timesteps, dtype=dtype)
+    else:
+        raise ValueError(f"Invalid beta schedule: {schedule}")
+
+
 @attrs.define(frozen=True)
 class DiffusionTrainStep(BaseTrainStep):
-    """Diffusion-based action train step for predicting the noise in a forward diffusion process.
+    """DDPM-like training objective."""
 
-    This implementation uses a simple continuous-time diffusion schedule:
-      x_t = sqrt(1 - t) * x_0 + sqrt(t) * noise
+    num_timesteps: int = attrs.field(default=100)
+    """The number of timesteps to use for the diffusion process."""
+    beta_schedule: str = attrs.field(default="linear")
+    """The beta schedule to use for the diffusion process."""
+    beta_kwargs: Dict[str, Any] = attrs.field(default={})
+    """Additional keyword arguments for the beta schedule generation.
+    
+    NOTE: this is intentionally unconstrained until I implement cosine, exponential, etc.
     """
 
     def get_loss(
@@ -44,20 +64,28 @@ class DiffusionTrainStep(BaseTrainStep):
         Returns:
             The scalar MSE loss between predicted noise and true noise.
         """
-        timesteps: jax.Array = additional_inputs["timesteps"]  # shape [B]
+        timesteps: jax.Array = additional_inputs["timesteps"]  # shape [B], dtype=jnp.int32
         diffusion_noise: jax.Array = additional_inputs["diffusion_noise"]  # shape [B, A, a]
 
-        alpha_bar = jnp.sqrt(1.0 - timesteps)[:, None, None]
+        # Generate beta schedule (including here since possibly learned in the future)
+        betas = generate_betas(
+            self.num_timesteps, self.beta_schedule, **self.beta_kwargs, dtype=jnp.float32
+        )  # [B,]
+        alphas = jnp.cumprod(1 - betas)[:, None, None]  # [B, 1, 1]
 
-        x_t = alpha_bar * target + jnp.sqrt(1.0 - alpha_bar**2) * diffusion_noise
+        z_t = (
+            jnp.sqrt(alphas[timesteps]) * target + jnp.sqrt(1 - alphas[timesteps]) * diffusion_noise
+        )
+        standardized_timesteps = jnp.array(timesteps, dtype=jnp.float32) / self.num_timesteps
 
         predicted_noise, _ = model.apply(
             params,
             observation=observation,
-            noisy_action=x_t,
-            timesteps=timesteps,
+            noisy_action=z_t,
+            timesteps=standardized_timesteps,
         )
 
+        # equally weighting the loss for each timestep as per the DDPM methodology
         mse_loss = jnp.mean(jnp.square(predicted_noise - diffusion_noise))
 
         if debug:
@@ -94,11 +122,17 @@ class DiffusionTrainStep(BaseTrainStep):
         batch_size = get_batch_size(observation)  # e.g., B
 
         # Sample timesteps t ~ Uniform(0,1)
-        prng_key, timesteps = sample_timesteps(prng_key, (batch_size,), distribution="uniform")
+        prng_key, timesteps = sample_timesteps(
+            prng_key,
+            (batch_size,),
+            distribution="discrete_uniform",
+            num_timesteps=self.num_timesteps,
+            dtype=jnp.int32,  # use float32 for now... TODO parametrize
+        )
 
         # Sample Gaussian noise
         prng_key, diffusion_noise = sample_gaussian_noise(
-            prng_key, (batch_size, *unbatched_prediction_shape)
+            prng_key, (batch_size, *unbatched_prediction_shape), dtype=jnp.float32
         )
 
         training_inputs = {
@@ -116,11 +150,11 @@ class DiffusionInferenceStep(BaseInferenceStep):
 
     unbatched_prediction_shape: Tuple[int, int] = attrs.field(default=(1, 1))
     """Shape of a single action, e.g. [A, a]."""
-    beta_start: float = attrs.field(default=0.0001)
-    """The starting beta value."""
-    beta_end: float = attrs.field(default=0.02)
-    """The ending beta value."""
-    num_steps: int = attrs.field(default=100)
+    beta_schedule: str = attrs.field(default="linear")
+    """The beta schedule to use for the diffusion process."""
+    beta_kwargs: Dict[str, Any] = attrs.field(default={})
+    """Additional keyword arguments for the beta schedule generation."""
+    num_timesteps: int = attrs.field(default=100)
     """The number of steps to take."""
 
     def generate_action(
@@ -145,10 +179,14 @@ class DiffusionInferenceStep(BaseInferenceStep):
             (updated_prng_key, final_actions)
             final_actions shape: [B, A, a], the denoised actions at t=0.
         """
+        # NOTE: for now, just return the noise
         batch_size = get_batch_size(observation)  # e.g., B
+        return prng_key, jax.random.normal(prng_key, (batch_size, *self.unbatched_prediction_shape))
 
         # ----- 1. Create a beta schedule and derive alpha terms -----
-        betas = jnp.linspace(self.beta_start, self.beta_end, self.num_steps)  # shape [T]
+        betas = generate_betas(
+            self.num_timesteps, self.beta_schedule, **self.beta_kwargs
+        )  # shape [T]
         alphas = 1.0 - betas  # shape [T]
         alpha_bars = jnp.cumprod(alphas)  # shape [T], cumulative product
 
@@ -157,35 +195,31 @@ class DiffusionInferenceStep(BaseInferenceStep):
         prng_key, x_t = sample_gaussian_noise(prng_key, action_shape)
 
         # ----- 3. Reverse diffusion from t=T-1 down to 0 -----
-        for i in reversed(range(self.num_steps)):
+        for i in reversed(range(self.num_timesteps)):
             # a) Grab the relevant alpha/bar values
             alpha_bar_t = alpha_bars[i]  # alpha_bar_i
             alpha_bar_prev = alpha_bars[i - 1] if i > 0 else 1.0
 
             # b) Model predicts the noise in x_t
-            #    Use integer timesteps of shape [B] so model can condition on t
             t_array = jnp.full((batch_size,), i, dtype=jnp.int32)
             predicted_noise, _ = model.apply(
                 params,
                 observation=observation,
-                timesteps=t_array,  # shape [B]
-                noisy_action=x_t,  # shape [B, A, a]
-                inference_mode=True,  # or model-specific
+                timesteps=t_array,
+                noisy_action=x_t,
+                inference_mode=True,
                 deterministic=True,
             )
 
             # c) Estimate the "predicted" clean action x_0
-            #    x_0 = (x_t - sqrt(1 - alpha_bar_t) * noise) / sqrt(alpha_bar_t)
             denom = jnp.sqrt(alpha_bar_t + 1e-7)
             x0 = (x_t - jnp.sqrt(1.0 - alpha_bar_t) * predicted_noise) / denom
 
-            # d) Compute the mean of q(x_{t-1} | x_t, x_0) [DDPM eq. 12 in Ho et al.]
-            #    Here, sqrt(alpha_bar_{t-1}) * x_0 + ...
+            # d) Compute the mean of q(x_{t-1} | x_t, x_0)
             mean_coef = jnp.sqrt(alpha_bar_prev)
-            x_t_minus_1_mean = mean_coef * x0
+            x_t_minus_1_mean = mean_coef * x0 + jnp.sqrt(1.0 - alpha_bar_prev) * predicted_noise
 
             # e) Compute the posterior variance
-            #    posterior_var = beta_t * (1 - alpha_bar_{t-1}) / (1 - alpha_bar_t)
             beta_t = betas[i]
             var_coef = (1.0 - alpha_bar_prev) / (1.0 - alpha_bar_t + 1e-7)
             posterior_var = beta_t * var_coef
@@ -196,8 +230,6 @@ class DiffusionInferenceStep(BaseInferenceStep):
                 z = jax.random.normal(subkey, x_t.shape)
                 x_t = x_t_minus_1_mean + jnp.sqrt(posterior_var) * z
             else:
-                # When t=0, we typically take the mean as the final sample
                 x_t = x_t_minus_1_mean
 
-        # At this point x_t is x_0, the fully "denoised" action
         return prng_key, x_t

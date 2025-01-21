@@ -21,7 +21,7 @@ training:
   learning_rate: 0.0001
   epochs: 500
   log_every_n_steps: 1
-  save_every_n_steps: 200
+  save_every_n_steps: 201
   eval_every_n_steps: 1000
   seed: 0
 
@@ -30,9 +30,8 @@ objective:
   args:
     do_pmap: false
     pmap_axis_name: "act_batch"
-    num_steps: 10
-    beta_start: 0.0001
-    beta_end: 0.02
+    num_timesteps: 100
+    beta_schedule: "linear"
 
 model:
   name: "pi_zero"

@@ -96,7 +96,7 @@ class FlowMatchingTrainStep(BaseTrainStep):
         prng_key, timesteps = sample_timesteps(
             prng_key,
             (batch_size,),
-            distribution="beta",
+            distribution="complementary_beta",
             cutoff_value=self.cutoff_value,
             beta_a=self.beta_a,
             beta_b=self.beta_b,

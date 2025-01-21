@@ -1,12 +1,12 @@
 """Train the model"""
 
 import argparse
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Mapping, Tuple
 
-import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import optax  # type: ignore
+from flax.core.frozen_dict import FrozenDict
 
 import wandb
 from robax.config.base_training_config import Config
@@ -19,6 +19,7 @@ from robax.utils.model_utils import (
     get_evaluator,
     get_model,
     get_train_step,
+    load_checkpoint,
     load_config,
     save_checkpoint,
 )
@@ -28,6 +29,7 @@ from robax.utils.observation import Observation
 def initialize_training(
     prng_key: jax.Array,
     config: Config,
+    resume_from_checkpoint_path: str | None = None,
 ) -> Tuple[
     jax.Array,
     DataLoader,
@@ -84,12 +86,17 @@ def initialize_training(
     init_timesteps = jnp.ones((batch_size,))  # timesteps
 
     batch_size = config["data"]["batch_size"]
-    params = model.init(
-        jax.random.PRNGKey(config["training"]["seed"]),
-        observation=init_observation,
-        noisy_action=init_noisy_action,
-        timesteps=init_timesteps,
-    )
+    if resume_from_checkpoint_path is not None:
+        params: FrozenDict[str, Mapping[str, Any]] | Dict[str, Any] = load_checkpoint(
+            resume_from_checkpoint_path
+        )
+    else:
+        params = model.init(
+            jax.random.PRNGKey(config["training"]["seed"]),
+            observation=init_observation,
+            noisy_action=init_noisy_action,
+            timesteps=init_timesteps,
+        )
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
 
@@ -99,14 +106,30 @@ def initialize_training(
     return prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step
 
 
-def train_model(config: Config, checkpoint_dir: str) -> None:
+def train_model(
+    config: Config,
+    checkpoint_dir: str,
+    resume_from_checkpoint_path: str | None = None,
+    debug: bool = False,
+) -> None:
     """Train the model using the specified configuration.
 
     Args:
         config: The configuration for training, including model, data, and training parameters.
     """
+    if not debug:
+        wandb.init(
+            project=config["project_name"],
+            name=config["experiment_name"],
+            config=config,  # type: ignore
+        )
+
     prng_key, dataloader, model, optimizer, params, opt_state, evaluator, train_step = (
-        initialize_training(jax.random.PRNGKey(config["training"]["seed"]), config)
+        initialize_training(
+            jax.random.PRNGKey(config["training"]["seed"]),
+            config,
+            resume_from_checkpoint_path,
+        )
     )
 
     # splitting action into historical and target
@@ -133,7 +156,7 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
                 optimizer=optimizer,
                 observation=batch,
                 target=target_action,
-                debug=False,
+                debug=debug,
                 unbatched_prediction_shape=(
                     config["data"]["action_target_length"],
                     config["data"]["action_feature_size"],
@@ -141,14 +164,19 @@ def train_model(config: Config, checkpoint_dir: str) -> None:
             )
             total_steps = i + num_batches_per_epoch * epoch
             if total_steps % config["training"]["log_every_n_steps"] == 0:
-                wandb.log({"Epoch": epoch, "Loss": loss.item(), "Step": total_steps})
+                if not debug:
+                    wandb.log({"Epoch": epoch, "Loss": loss.item(), "Step": total_steps})
                 print(f"Epoch {epoch}, Loss: {loss.item()}")
             if total_steps % config["training"]["save_every_n_steps"] == 0:
                 save_checkpoint(params, checkpoint_dir, epoch, i)
             if total_steps % config["training"]["eval_every_n_steps"] == 0:
                 prng_key, average_reward = evaluator.batch_rollout(prng_key, params, model)
                 print(f"Average reward at epoch {epoch}, step {i}: {average_reward}")
-                wandb.log({"Eval": average_reward.item(), "Step": total_steps})
+                if not debug:
+                    wandb.log({"Eval": average_reward.item(), "Step": total_steps})
+
+    if not debug:
+        wandb.finish()
 
 
 def main() -> None:
@@ -169,16 +197,23 @@ def main() -> None:
         default="~/checkpoints",
         help="Directory to save checkpoints.",
     )
+    parser.add_argument(
+        "--resume_from_checkpoint_path",
+        type=str,
+        default=None,
+        help="Path to the checkpoint to resume from.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Whether to use debug mode.",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config_path)
-    wandb.init(
-        project=config["project_name"],
-        name=config["experiment_name"],
-        config=config,  # type: ignore
-    )
-    train_model(config, args.checkpoint_dir)
-    wandb.finish()
+
+    train_model(config, args.checkpoint_dir, args.resume_from_checkpoint_path, args.debug)
 
 
 if __name__ == "__main__":

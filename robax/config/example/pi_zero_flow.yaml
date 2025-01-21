@@ -21,7 +21,7 @@ training:
   learning_rate: 0.0001
   epochs: 500
   log_every_n_steps: 1
-  save_every_n_steps: 200
+  save_every_n_steps: 201
   eval_every_n_steps: 1000
   seed: 0
 
@@ -59,7 +59,7 @@ model:
     dropout: 0.1
 
 evaluation:
-  env_name: "push_t"
+  env_name: "push_t_keypoints"
   num_envs: 128
   episode_length: 200
   action_inference_range: [1, 9]
