@@ -56,6 +56,7 @@ class PiZero(BasePolicy):
 
     # Initialization parameters
     vit_variant: str
+    vit_kwargs: Dict[str, Any]
     llm_vocab_size: int
 
     # Broader training
@@ -203,6 +204,7 @@ class PiZero(BasePolicy):
 
         return action_field_pred, out
 
+    @nn.compact
     def embed_action(self, action: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the action into the action expert
 
@@ -220,6 +222,7 @@ class PiZero(BasePolicy):
         )  # [B, A, D]
         return action_token_embed
 
+    @nn.compact
     def embed_proprio(self, proprio: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the proprioceptive features into the action expert
 
@@ -235,6 +238,7 @@ class PiZero(BasePolicy):
         )  # [B, P, D]
         return proprio_token_embed
 
+    @nn.compact
     def embed_images(self, images: jax.Array, **additional_inputs: jax.Array) -> jax.Array:
         """Embed the images into the gemma expert
 
@@ -247,6 +251,10 @@ class PiZero(BasePolicy):
         B, I = images.shape[:2]
         images = images.reshape(B * I, *images.shape[2:])
         vit_config = vit.decode_variant(self.vit_variant)
+        vit_config = {
+            **vit_config,
+            **self.vit_kwargs,
+        }
         embed_dim = self.mixture_specs[self.input_expert_map["images"]]["embed_dim"]
         image_token_embed, aux = vit.ViT(num_classes=embed_dim, name="img", **vit_config)(
             images
