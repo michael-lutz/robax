@@ -93,9 +93,7 @@ class DiffusionTrainStep(BaseTrainStep):
         mse_loss = jnp.mean(jnp.square(predicted_noise - diffusion_noise))
 
         if debug:
-            import pdb
-
-            pdb.set_trace()
+            jax.debug.breakpoint()
 
         return mse_loss
 

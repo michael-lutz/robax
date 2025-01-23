@@ -30,9 +30,8 @@ class MSEObjective(BaseTrainStep):
         predicted_action, _ = model.apply(params, observation=observation)
         mse_loss = jnp.mean(jnp.square(predicted_action - target))
         if debug:
-            import pdb
+            jax.debug.breakpoint()
 
-            pdb.set_trace()
         return mse_loss
 
     def get_additional_inputs(

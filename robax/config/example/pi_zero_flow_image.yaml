@@ -50,8 +50,8 @@ model:
         embed_dim: 256
         mlp_dim: 1024
     input_expert_map:
-      images: "gemma"
-      text: "gemma"
+      images: "action_expert"
+      text: "action_expert"
       proprio: "action_expert"
       action: "action_expert"
     depth: 6

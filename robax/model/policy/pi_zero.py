@@ -255,6 +255,7 @@ class PiZero(BasePolicy):
         vit_config = {
             **vit_config,
             **self.vit_kwargs,
+            "head_zeroinit": False,
         }
         embed_dim = self.mixture_specs[self.input_expert_map["images"]]["embed_dim"]
         image_token_embed, aux = vit.ViT(num_classes=embed_dim, name="img", **vit_config)(

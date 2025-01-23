@@ -78,9 +78,7 @@ class FlowMatchingTrainStep(BaseTrainStep):
         gt_vector_field = optimal_transport_vector_field(starting_noise, target)
         mse_loss = jnp.mean(jnp.square(predicted_field - gt_vector_field))
         if debug:
-            import pdb
-
-            pdb.set_trace()
+            jax.debug.breakpoint()
         return mse_loss
 
     def get_additional_inputs(
