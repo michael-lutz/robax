@@ -12,20 +12,20 @@ from robax.utils.image_utils import interpolate_images
 from robax.utils.numpy_observation import NumpyObservation, numpy_observation_from_dict
 
 
-class PushTKeypointsEvalEnv(BatchableEnv):
+class PushTImageEvalEnv(BatchableEnv):
     """Pusht keypoints env for evaluation."""
 
     def __init__(self) -> None:
         """Initialize the environment."""
         self.underlying_env = gym.make(
-            "gym_pusht/PushT-v0", render_mode="rgb_array", obs_type="pixels"
+            "gym_pusht/PushT-v0", render_mode="rgb_array", obs_type="pixels_agent_pos"
         )
 
     def transform_observation(self, observation: Dict[str, Any]) -> NumpyObservation:
         """Process the observation."""
         out = {
             "proprio": observation["agent_pos"] / 512,
-            "image": interpolate_images(observation["pixels"], (224, 224)),
+            "images": interpolate_images(observation["pixels"], (224, 224)),
         }
 
         return numpy_observation_from_dict(out)
@@ -37,7 +37,7 @@ class PushTKeypointsEvalEnv(BatchableEnv):
         agent_pos_size = self.underlying_env.observation_space["agent_pos"].shape[0]  # type: ignore
         environment_state_size = self.underlying_env.observation_space["environment_state"].shape[0]  # type: ignore
         proprio_size = agent_pos_size + environment_state_size
-        return {"proprio": (proprio_size,), "image": (224, 224, 3)}
+        return {"proprio": (proprio_size,), "images": (224, 224, 3)}
 
     def reset(self, **kwargs: Any) -> Tuple[NumpyObservation, Dict[str, Any]]:
         """Reset the environment.
@@ -71,6 +71,6 @@ class PushTKeypointsEvalEnv(BatchableEnv):
         return render
 
     @classmethod
-    def get_factory_fn(cls) -> Callable[[], "PushTKeypointsEvalEnv"]:
+    def get_factory_fn(cls) -> Callable[[], "PushTImageEvalEnv"]:
         """Create an environment from a config."""
         return lambda: cls()

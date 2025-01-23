@@ -26,12 +26,14 @@ from robax.utils.model_utils import (
     save_checkpoint,
 )
 from robax.utils.observation import Observation
+from robax.utils.param_utils import load_params
 
 
 def initialize_training(
     prng_key: jax.Array,
     config: Config,
     resume_from_checkpoint_path: str | None = None,
+    vit_pretrained_checkpoint_path: str | None = None,
 ) -> Tuple[
     jax.Array,
     DataLoader,
@@ -59,6 +61,9 @@ def initialize_training(
         train_step: The train step.
         inference_step: The inference step.
     """
+    assert not (
+        vit_pretrained_checkpoint_path is not None and resume_from_checkpoint_path is not None
+    ), "Only one of vit_pretrained_checkpoint_path or resume_from_checkpoint_path can be provided"
     prng_key, subkey = jax.random.split(prng_key)
     batch_size = config["data"]["batch_size"]
     dataloader = get_dataloader(config["data"], subkey, batch_size)
@@ -73,7 +78,19 @@ def initialize_training(
     optimizer = optax.adam(learning_rate=1e-3)
 
     init_observation: Observation = {
-        "images": None,
+        "images": (
+            jnp.ones(
+                (
+                    batch_size,
+                    config["data"]["image_length"],
+                    224,  # TODO: need to cleanly set this...
+                    224,
+                    3,
+                )
+            )
+            if config["data"]["image_length"] > 0
+            else None
+        ),
         "text": None,
         "proprio": jnp.ones(
             (batch_size, config["data"]["proprio_length"], config["data"]["proprio_feature_size"])
@@ -101,6 +118,13 @@ def initialize_training(
             noisy_action=init_noisy_action,
             timesteps=init_timesteps,
         )
+
+        if vit_pretrained_checkpoint_path is not None:
+            vit_params = load_params(vit_pretrained_checkpoint_path)
+            assert isinstance(vit_params, dict), "Haven't implemented FrozenDict loading yet"
+            vit_params["head"] = params["params"]["img"]["head"]
+            params["params"]["vit"] = vit_params
+
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
 
@@ -125,6 +149,7 @@ def train_model(
     config: Config,
     checkpoint_dir: str,
     resume_from_checkpoint_path: str | None = None,
+    vit_pretrained_checkpoint_path: str | None = None,
     debug: bool = False,
 ) -> None:
     """Train the model using the specified configuration.
@@ -153,6 +178,7 @@ def train_model(
         jax.random.PRNGKey(config["training"]["seed"]),
         config,
         resume_from_checkpoint_path,
+        vit_pretrained_checkpoint_path,
     )
 
     @jax.jit
@@ -257,11 +283,23 @@ def main() -> None:
         default=False,
         help="Whether to use debug mode.",
     )
+    parser.add_argument(
+        "--vit_pretrained_checkpoint_path",
+        type=str,
+        default=None,
+        help="Path to the checkpoint to resume from.",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config_path)
 
-    train_model(config, args.checkpoint_dir, args.resume_from_checkpoint_path, args.debug)
+    train_model(
+        config,
+        args.checkpoint_dir,
+        args.resume_from_checkpoint_path,
+        args.vit_pretrained_checkpoint_path,
+        args.debug,
+    )
 
 
 if __name__ == "__main__":

@@ -11,7 +11,6 @@ import yaml
 from robax.config.base_training_config import (
     Config,
     DataConfig,
-    EvaluationConfig,
     ModelConfig,
     ObjectiveConfig,
 )
@@ -142,8 +141,25 @@ def get_dataloader(config: DataConfig, subkey: jnp.ndarray, batch_size: int) -> 
         )
 
         return dataloader
+    elif config["dataset_id"] == "push_t_image":
+        from robax.training.data_utils.obs_transforms.pusht_image_transform import (
+            PushTImageTransform,
+        )
+
+        transform = PushTImageTransform()
+        dataloader = DataLoader(
+            dataset_id="lerobot/pusht_image",
+            prng_key=subkey,
+            delta_timestamps=config["delta_timestamps"],
+            batch_size=batch_size,
+            num_workers=config["num_workers"],
+            shuffle=True,
+            transform=transform,  # type: ignore
+        )
     else:
         raise ValueError("Unknown dataset_id in config")
+
+    return dataloader
 
 
 def get_evaluator(config: Config) -> BatchEvaluator:
@@ -161,7 +177,17 @@ def get_evaluator(config: Config) -> BatchEvaluator:
         create_env_fn = PushTKeypointsEvalEnv.get_factory_fn()
         observation_sizes = {
             "proprio": config["data"]["proprio_length"],
-            "image": None,
+            "images": None,
+            "text": None,
+            "action": None,
+        }
+    elif config["data"]["dataset_id"] == "push_t_image":
+        from robax.evaluation.envs.pusht_image_env import PushTImageEvalEnv
+
+        create_env_fn = PushTImageEvalEnv.get_factory_fn()
+        observation_sizes = {
+            "proprio": config["data"]["proprio_length"],
+            "images": config["data"]["image_length"],
             "text": None,
             "action": None,
         }

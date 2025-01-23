@@ -22,5 +22,6 @@ class PushTImageTransform(BaseTrainObsTransform):
         out["proprio"] = horizon["observation.state"] / normalizer
         out["action"] = horizon["action"] / normalizer
 
-        out["images"] = interpolate_images(horizon["observation.pixels"], (224, 224))
+        images = np.array(horizon["observation.image"])
+        out["images"] = interpolate_images(images, (224, 224))
         return out

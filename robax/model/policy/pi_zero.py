@@ -49,6 +49,7 @@ from robax.model.components.token_embed import Embedder
 from robax.model.img_model import vit
 from robax.model.policy.base_policy import BasePolicy
 from robax.utils.observation import Observation
+from robax.utils.param_utils import load_params
 
 
 class PiZero(BasePolicy):
