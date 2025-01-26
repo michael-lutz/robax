@@ -38,7 +38,7 @@ objective:
 model:
   name: "pi_zero"
   args:
-    vit_variant: "B/16"
+    vit_variant: "S/16"
     vit_kwargs:
       pool_type: "map"
     llm_vocab_size: 0

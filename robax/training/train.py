@@ -123,7 +123,7 @@ def initialize_training(
             vit_params = load_params(vit_pretrained_checkpoint_path)
             assert isinstance(vit_params, dict), "Haven't implemented FrozenDict loading yet"
             vit_params["head"] = params["params"]["img"]["head"]
-            params["params"]["vit"] = vit_params
+            params["params"]["img"] = vit_params
 
     assert isinstance(params, dict)
     opt_state = optimizer.init(params)
