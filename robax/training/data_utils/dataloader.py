@@ -152,7 +152,7 @@ def get_horizon_factory(
     delta_timestamps: Dict[str, NDArray[np.float32]],
     average_timestamp_length: float,
     tolerance: float = 1e-3,
-    transform: Callable[[Dict[str, Any]], Dict[str, Any]] | None = None,
+    transform: BaseTrainObsTransform | None = None,
 ) -> Callable[[int], Dict[str, Any]]:
     return partial(
         get_horizon_helper,
@@ -160,7 +160,7 @@ def get_horizon_factory(
         delta_timestamps=delta_timestamps,
         average_timestamp_length=average_timestamp_length,
         tolerance=tolerance,
-        transform=transform,
+        transform=transform.format_obs_cpu if transform else None,
     )
 
 
@@ -284,4 +284,7 @@ class DataLoader:
         else:
             batch = [get_horizon(idx) for idx in indices]
 
-        return aggregate_horizons(batch)
+        obs_batch = aggregate_horizons(batch)
+        if self.transform:  # GPU-only transforms are batched and thus happen here
+            obs_batch = self.transform.transform_obs_gpu(obs_batch)
+        return obs_batch

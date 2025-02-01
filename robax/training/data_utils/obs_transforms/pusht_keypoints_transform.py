@@ -7,13 +7,14 @@ import numpy as np
 from robax.training.data_utils.obs_transforms.base_train_obs_transform import (
     BaseTrainObsTransform,
 )
+from robax.utils.observation import Observation
 
 
 class PushTKeypointsTransform(BaseTrainObsTransform):
     """A class that contains a set of transformations to apply to the Pusht dataset."""
 
     @staticmethod
-    def __call__(horizon: Dict[str, Any]) -> Dict[str, Any]:
+    def format_obs_cpu(horizon: Dict[str, Any]) -> Dict[str, Any]:
         """Create a proprioception feature from the state and environment state."""
 
         out = {}
@@ -26,3 +27,8 @@ class PushTKeypointsTransform(BaseTrainObsTransform):
         )
         out["action"] = horizon["action"] / normalizer
         return out
+
+    @staticmethod
+    def transform_obs_gpu(horizon: Observation) -> Observation:
+        """Apply the transformation to the horizon."""
+        return horizon

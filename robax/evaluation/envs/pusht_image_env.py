@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 
 from robax.evaluation.envs.base_env import BatchableEnv
-from robax.utils.image_utils import interpolate_images
+from robax.utils.image_utils import interpolate_image_jax
 from robax.utils.numpy_observation import NumpyObservation, numpy_observation_from_dict
 
 
@@ -23,9 +23,13 @@ class PushTImageEvalEnv(BatchableEnv):
 
     def transform_observation(self, observation: Dict[str, Any]) -> NumpyObservation:
         """Process the observation."""
+        # hack: downsizing image to 96x96 before upsampling to 224x224
+        lowdim_image = interpolate_image_jax(observation["pixels"], (96, 96))
+        highdim_image = interpolate_image_jax(lowdim_image, (224, 224))
+
         out = {
             "proprio": observation["agent_pos"] / 512,
-            "images": interpolate_images(observation["pixels"], (224, 224)),
+            "images": highdim_image,
         }
 
         return numpy_observation_from_dict(out)

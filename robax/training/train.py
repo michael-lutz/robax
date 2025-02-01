@@ -1,6 +1,7 @@
 """Train the model"""
 
 import argparse
+import time
 from typing import Any, Dict, Mapping, Tuple
 
 import jax
@@ -227,6 +228,7 @@ def train_model(
                 batch["action"] = historical_action
 
             target_action = action[:, action_split_idx:]
+            starting_time = time.time()
             prng_key, params, opt_state, loss, _ = train_step_jit(
                 prng_key=prng_key,
                 params=params,
@@ -234,11 +236,17 @@ def train_model(
                 observation=batch,
                 target=target_action,
             )
+            end_time = time.time()
+            print(f"Time taken for train step: {end_time - starting_time}")
             total_steps = i + num_batches_per_epoch * epoch
+
+            starting_time = time.time()
             if total_steps % config["training"]["log_every_n_steps"] == 0:
                 if not debug:
                     wandb.log({"Epoch": epoch, "Loss": loss.item(), "Step": total_steps})
                 print(f"Epoch {epoch}, Loss: {loss.item()}")
+            end_time = time.time()
+            print(f"Time taken for logging: {end_time - starting_time}")
             if total_steps % config["training"]["save_every_n_steps"] == 0:
                 save_checkpoint(params, checkpoint_dir, epoch, i)
             if total_steps % config["training"]["eval_every_n_steps"] == 0:
