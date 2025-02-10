@@ -2,7 +2,7 @@
 
 import argparse
 import time
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict, Hashable, Mapping, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -28,6 +28,34 @@ from robax.utils.model_utils import (
 )
 from robax.utils.observation import Observation
 from robax.utils.param_utils import load_params
+
+
+def create_optimizer(
+    base_learning_rate: float, overrides: Dict[str, float]
+) -> optax.GradientTransformation:
+    """Create an optimizer with learning rates specified for the different model parameters"""
+    optimizers: Dict[Hashable, optax.GradientTransformation] = {
+        "default": optax.adam(learning_rate=base_learning_rate)
+    }
+    optimizers.update(
+        {
+            param_name: optax.adam(learning_rate=learning_rate)
+            for param_name, learning_rate in overrides.items()
+        }
+    )
+
+    def labeler(current_param: Dict[str, Any], label: str = "default") -> Dict[str, Any]:
+        res = {}
+        if isinstance(current_param, jnp.ndarray):
+            return label
+        for key, value in current_param.items():
+            if key in overrides:
+                res[key] = labeler(value, key)
+            else:
+                res[key] = labeler(value, label)
+        return res
+
+    return optax.multi_transform(transforms=optimizers, param_labels=labeler)
 
 
 def initialize_training(
@@ -76,7 +104,10 @@ def initialize_training(
         config["model"],
         unbatched_prediction_shape=unbatched_prediction_shape,
     )
-    optimizer = optax.adam(learning_rate=1e-3)
+
+    # create optimizer with learning rates specified for the different model parameters
+    overrides = {"img": 1e-4}  # TODO: make this configurable
+    optimizer = create_optimizer(1e-3, overrides)
 
     init_observation: Observation = {
         "images": (

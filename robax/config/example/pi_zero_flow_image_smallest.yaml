@@ -1,0 +1,65 @@
+experiment_name: "pi_zero_flow_matching_push_t"
+project_name: "push_t_image"
+
+data:
+  dataset_id: "push_t_image"
+  delta_timestamps:
+    observation.image: [0.0]
+    observation.state: [-0.1, 0.0]
+    action: [-0.1, 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4]
+  proprio_length: 2
+  proprio_feature_size: 2
+  action_history_length: 0
+  action_target_length: 16
+  action_feature_size: 2
+  image_length: 1
+  text_length: 0
+  num_workers: 4
+  batch_size: 128
+
+training:
+  learning_rate: 0.0001
+  epochs: 500
+  log_every_n_steps: 10
+  save_every_n_steps: 4000
+  eval_every_n_steps: 4000
+  seed: 0
+
+objective:
+  name: "flow_matching"
+  args:
+    do_pmap: false
+    pmap_axis_name: "act_batch"
+    cutoff_value: 0.999
+    beta_a: 1.5
+    beta_b: 1.0
+    num_steps: 10
+
+model:
+  name: "pi_zero"
+  args:
+    vit_variant: "Ti/16"
+    vit_kwargs:
+      pool_type: "tok"
+    llm_vocab_size: 0
+    mixture_specs:
+      action_expert:
+        embed_dim: 256
+        mlp_dim: 1024
+    input_expert_map:
+      images: "action_expert"
+      text: "action_expert"
+      proprio: "action_expert"
+      action: "action_expert"
+    depth: 6
+    num_heads: 6
+    num_kv_heads: 1
+    head_dim: 64
+    dropout: 0.1
+
+evaluation:
+  env_name: "push_t_keypoints"
+  num_envs: 128
+  episode_length: 200
+  action_inference_range: [1, 9]
+

@@ -1,8 +1,9 @@
 """Implements base image model API"""
 
-import jax
 from abc import ABC, abstractmethod
 from typing import Any
+
+import jax
 
 
 class BaseImageModel(ABC):
